@@ -1,0 +1,137 @@
+[
+  {
+    "id": "CMD-1789249064168",
+    "orderId": "CMD-1789249064168",
+    "restaurantId": "resto-premium-01",
+    "customerName": "zongo",
+    "numeroClient": "",
+    "customerPhone": "",
+    "tableNumber": 15,
+    "specialNotes": "avec mayo",
+    "items": [
+      {
+        "product": {
+          "id": 1,
+          "name": "Poulet braisé",
+          "category": "Plat",
+          "price": 3500,
+          "description": "Poulet braisé accompagné de riz et de légumes frais",
+          "image": "poulet.jpg",
+          "stock": 25
+        },
+        "quantity": 1,
+        "price": 3500
+      }
+    ],
+    "montantTotal": 3500,
+    "total": 3500,
+    "statut": "PRETE",
+    "status": "PRETE",
+    "createdAt": "2026-09-12T21:37:44.168Z",
+    "expiresAt": "2026-09-12T21:47:44.168Z",
+    "isPaid": true,
+    "paidAt": "2026-09-12T21:44:24.448Z",
+    "readyAt": "2026-09-12T21:46:17.546Z"
+  },
+  {
+    "id": "CMD-1789249334179",
+    "orderId": "CMD-1789249334179",
+    "restaurantId": "resto-premium-01",
+    "customerName": "Zongo",
+    "numeroClient": "77121289",
+    "customerPhone": "77121289",
+    "tableNumber": 11,
+    "specialNotes": "no mayo",
+    "items": [
+      {
+        "product": {
+          "id": 1,
+          "name": "Poulet braisé",
+          "category": "Plat",
+          "price": 3500,
+          "description": "Poulet braisé accompagné de riz et de légumes frais",
+          "image": "poulet.jpg",
+          "stock": 24
+        },
+        "quantity": 1,
+        "price": 3500
+      }
+    ],
+    "montantTotal": 3500,
+    "total": 3500,
+    "statut": "PRETE",
+    "status": "PRETE",
+    "createdAt": "2026-09-12T21:42:14.179Z",
+    "expiresAt": "2026-09-12T21:52:14.179Z",
+    "isPaid": true,
+    "paidAt": "2026-09-12T21:46:29.681Z",
+    "readyAt": "2026-09-12T21:50:47.077Z"
+  },
+  {
+    "id": "CMD-1789249732219",
+    "orderId": "CMD-1789249732219",
+    "restaurantId": "resto-premium-01",
+    "customerName": "zongo",
+    "numeroClient": "77121289",
+    "customerPhone": "77121289",
+    "tableNumber": 11,
+    "specialNotes": "",
+    "items": [
+      {
+        "product": {
+          "id": 4,
+          "name": "Alloco (Bananes plantains)",
+          "category": "Entrées",
+          "price": 1500,
+          "description": "Tranches de bananes plantains mûres et frites, servies avec piment",
+          "image": "alloco.jpg",
+          "stock": 25
+        },
+        "quantity": 2,
+        "price": 1500
+      }
+    ],
+    "montantTotal": 3000,
+    "total": 3000,
+    "statut": "PRETE",
+    "status": "PRETE",
+    "createdAt": "2026-09-12T21:48:52.219Z",
+    "expiresAt": "2026-09-12T21:58:52.219Z",
+    "isPaid": true,
+    "paidAt": "2026-09-12T21:49:32.514Z",
+    "readyAt": "2026-09-12T21:50:37.606Z"
+  },
+  {
+    "id": "CMD-1789249874529",
+    "orderId": "CMD-1789249874529",
+    "restaurantId": "resto-premium-01",
+    "customerName": "Zongo",
+    "numeroClient": "77121289",
+    "customerPhone": "77121289",
+    "tableNumber": 11,
+    "specialNotes": "",
+    "items": [
+      {
+        "product": {
+          "id": 2,
+          "name": "Salade composée",
+          "category": "Entrées",
+          "price": 2000,
+          "description": "Salade fraîche avec tomates, concombres, œufs et vinaigrette",
+          "image": "salade.jpg",
+          "stock": 25
+        },
+        "quantity": 1,
+        "price": 2000
+      }
+    ],
+    "montantTotal": 2000,
+    "total": 2000,
+    "statut": "EN_PREPARATION",
+    "status": "EN_PREPARATION",
+    "createdAt": "2026-09-12T21:51:14.529Z",
+    "expiresAt": "2026-09-12T22:01:14.529Z",
+    "isPaid": true,
+    "paidAt": "2026-09-12T21:51:31.912Z"
+  }
+]

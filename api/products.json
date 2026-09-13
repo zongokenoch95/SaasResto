@@ -1,0 +1,164 @@
+[
+  {
+    "id": 1,
+    "name": "Poulet braisé",
+    "category": "Plat",
+    "price": 3500,
+    "description": "Poulet braisé accompagné de riz et de légumes frais",
+    "image": "poulet.jpg",
+    "stock": 23
+  },
+  {
+    "id": 2,
+    "name": "Salade composée",
+    "category": "Entrées",
+    "price": 2000,
+    "description": "Salade fraîche avec tomates, concombres, œufs et vinaigrette",
+    "image": "salade.jpg",
+    "stock": 24
+  },
+  {
+    "id": 3,
+    "name": "Jus de Bissap",
+    "category": "Boissons",
+    "price": 500,
+    "description": "Boisson rafraîchissante locale à base de fleurs d'hibiscus",
+    "image": "bissap.jpg",
+    "stock": 25
+  },
+  {
+    "id": 4,
+    "name": "Alloco (Bananes plantains)",
+    "category": "Entrées",
+    "price": 1500,
+    "description": "Tranches de bananes plantains mûres et frites, servies avec piment",
+    "image": "alloco.jpg",
+    "stock": 23
+  },
+  {
+    "id": 5,
+    "name": "Thiéboudienne (Riz au poisson et viande)",
+    "category": "Plat",
+    "price": 4000,
+    "description": "Plat traditionnel de riz rouge mijoté au poisson et légumes variés",
+    "image": "thieb.jpg",
+    "stock": 25
+  },
+  {
+    "id": 6,
+    "name": "Glace vanille / chocolat",
+    "category": "Desserts",
+    "price": 1000,
+    "description": "Boules de glace artisanale au choix",
+    "image": "glace.jpg",
+    "stock": 25
+  },
+  {
+    "id": 7,
+    "name": "Foutou Sauce graine(Banane , Igname)",
+    "category": "Plat",
+    "price": 2500,
+    "description": "Sauce graine accompagné de pate moulé de banane ou d'igname",
+    "image": "foutou.jpg",
+    "stock": 25
+  },
+  {
+    "id": 8,
+    "name": "Riz Gras au bœuf",
+    "category": "Plat",
+    "price": 2500,
+    "description": "Riz parfumé mijoté dans un bouillon riche avec morceaux de bœuf",
+    "image": "rizgras.jpg",
+    "stock": 25
+  },
+  {
+    "id": 9,
+    "name": "Jus de Gingembre (Gnamakoudji)",
+    "category": "Boissons",
+    "price": 600,
+    "description": "Boisson énergisante et piquante à base de gingembre frais",
+    "image": "gingembre.jpg",
+    "stock": 25
+  },
+  {
+    "id": 10,
+    "name": "Shewppes",
+    "category": "Boissons",
+    "price": 800,
+    "description": "Boisson Energisante",
+    "image": "shewppes.jpg",
+    "stock": 25
+  },
+  {
+    "id": 11,
+    "name": "Salade de fruits frais",
+    "category": "Desserts",
+    "price": 1800,
+    "description": "Assortiment de fruits de saison découpés et parfumés à la menthe",
+    "image": "fruits.jpg",
+    "stock": 25
+  },
+  {
+    "id": 12,
+    "name": "Crêpe au sucre",
+    "category": "Desserts",
+    "price": 1200,
+    "description": "Crêpe moelleuse nappée de sucre et beurre",
+    "image": "crepe.jpg",
+    "stock": 25
+  },
+  {
+    "id": 13,
+    "name": "Orangina",
+    "category": "Boissons",
+    "price": 1000,
+    "description": "Jus d'orange pur ",
+    "image": "orangina.jpg",
+    "stock": 25
+  },
+  {
+    "id": 14,
+    "name": "Mafé",
+    "category": "Plat",
+    "price": 2000,
+    "description": "Riz sauce arrachide accompagné de viande de boeuf ou de poisson",
+    "image": "mafe.jpg",
+    "stock": 25
+  },
+  {
+    "id": 15,
+    "name": "Spaghetti",
+    "category": "Plat",
+    "price": 1500,
+    "description": "Plat de pattes accompagné de boullettes de viande",
+    "image": "pattes.jpg",
+    "stock": 25
+  },
+  {
+    "id": 16,
+    "name": "Brakina",
+    "category": "Boissons",
+    "price": 1000,
+    "description": "Bière de maïs ",
+    "image": "brakina.jpg",
+    "stock": 25
+  },
+  {
+    "id": 17,
+    "name": "Beau Fort",
+    "category": "Boissons",
+    "price": 1000,
+    "description": "Bière de maïs ",
+    "image": "beaufort.jpg",
+    "stock": 25
+  },
+  {
+    "id": 18,
+    "name": "Milk Chake",
+    "category": "Desserts",
+    "price": 1500,
+    "description": "Boisson glacée ultra-onctueuse préparée à base de lait frais et de crème glacée artisanale.",
+    "image": "chake.jpg",
+    "stock": 25
+  }
+]

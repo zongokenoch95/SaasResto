@@ -1,0 +1,251 @@
+/* ==========================================================
+   Charte Graphique & Styles Globaux - Restaurant "Le Premium"
+   ========================================================== */
+
+:root {
+  /* Palette de couleurs */
+  --primary: #e67e22;            /* Orange ambré chaleureux */
+  --primary-hover: #d35400;
+  --primary-light: #fef5ec;
+  --secondary: #2c3e50;          /* Bleu nuit / charbon élégant */
+  --secondary-hover: #1a252f;
+  
+  --accent: #27ae60;             /* Vert d'accentuation / succès / prix */
+  --accent-light: #eafaf1;
+  --danger: #e74c3c;             /* Rouge suppression / erreur */
+  --danger-light: #fdf2f2;
+  --warning: #f39c12;
+  
+  /* Arrière-plans & Surfaces */
+  --bg-main: #f8fafc;            /* Fond de page très légèrement teinté */
+  --bg-card: #ffffff;            /* Fond des cartes et conteneurs */
+  --bg-alt: #f1f5f9;             /* Fond secondaire pour filtres / bannières */
+
+  /* Textes & Typographies */
+  --text-main: #1e293b;          /* Texte principal lisible et contrasté */
+  --text-muted: #64748b;         /* Texte secondaire / descriptions */
+  --text-light: #94a3b8;
+  --text-white: #ffffff;
+  
+  /* Bordures, Ombres & Rayons */
+  --border-color: #e2e8f0;
+  --border-focus: #e67e22;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+  
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
+  --shadow-hover: 0 8px 20px rgba(230, 126, 34, 0.18);
+
+  /* Typographie */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --transition-fast: 0.2s ease;
+  --transition-normal: 0.3s ease;
+}
+
+/* ==========================================================
+   CSS Reset & Base
+   ========================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  line-height: 1.6;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* ==========================================================
+   Layout & Conteneurs
+   ========================================================== */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+.page-wrapper {
+  padding: 2rem 0 4rem;
+}
+
+/* ==========================================================
+   Boutons
+   ========================================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: center;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: var(--text-white);
+  box-shadow: 0 4px 10px rgba(230, 126, 34, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--primary-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(230, 126, 34, 0.4);
+}
+
+.btn-secondary {
+  background-color: var(--secondary);
+  color: var(--text-white);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--secondary-hover);
+  transform: translateY(-2px);
+}
+
+.btn-outline {
+  background-color: transparent;
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background-color: var(--primary);
+  color: var(--text-white);
+}
+
+.btn-danger {
+  background-color: var(--danger-light);
+  color: var(--danger);
+  border-color: rgba(231, 76, 60, 0.2);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: var(--danger);
+  color: var(--text-white);
+}
+
+.btn-sm {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.875rem;
+}
+
+.btn-lg {
+  padding: 1rem 2rem;
+  font-size: 1.125rem;
+}
+
+/* ==========================================================
+   Badges & Étiquettes
+   ========================================================== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: var(--radius-full);
+}
+
+.badge-primary {
+  background-color: var(--primary-light);
+  color: var(--primary);
+}
+
+.badge-success {
+  background-color: var(--accent-light);
+  color: var(--accent);
+}
+
+/* ==========================================================
+   Cartes & Éléments
+   ========================================================== */
+.card {
+  background-color: var(--bg-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+  overflow: hidden;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* ==========================================================
+   Formulaires & Champs de saisie
+   ========================================================== */
+.form-group {
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.form-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.form-control {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  color: var(--text-main);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(230, 126, 34, 0.15);
+}
+
