@@ -1,4 +1,4 @@
-﻿import { defineStore } from 'pinia'
+import { defineStore } from 'pinia'
 import { createCommande, getCommandeStatut, cancelCommandeClient } from '@/services/api'
 import { useCartStore } from './cartStore'
 
@@ -37,6 +37,8 @@ export const useOrderStore = defineStore('order', {
           customerPhone: orderData.numeroClient || orderData.customerPhone || cartStore.customerPhone,
           tableNumber: Number(orderData.tableNumber || cartStore.tableNumber || 1),
           specialNotes: orderData.specialNotes || cartStore.specialNotes || "",
+          modePaiement: orderData.modePaiement || cartStore.paymentMethod || "orange_money",
+          mode_paiement: orderData.modePaiement || cartStore.paymentMethod || "orange_money",
           items: [...cartStore.items],
           montantTotal: cartStore.totalPrice,
           total: cartStore.totalPrice

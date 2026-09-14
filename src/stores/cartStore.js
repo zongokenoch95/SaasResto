@@ -1,4 +1,4 @@
-﻿import { defineStore } from 'pinia'
+import { defineStore } from 'pinia'
 
 export const useCartStore = defineStore('cart', {
   state: () => ({
@@ -6,7 +6,8 @@ export const useCartStore = defineStore('cart', {
     customerName: localStorage.getItem('cart_customerName') || '',
     customerPhone: localStorage.getItem('cart_customerPhone') || '',
     tableNumber: localStorage.getItem('cart_tableNumber') || '',
-    specialNotes: localStorage.getItem('cart_specialNotes') || ''
+    specialNotes: localStorage.getItem('cart_specialNotes') || '',
+    paymentMethod: localStorage.getItem('cart_paymentMethod') || 'orange_money'
   }),
   getters: {
     totalPrice: (state) => state.items.reduce((sum, item) => sum + (item.price * item.quantity), 0),
@@ -19,6 +20,7 @@ export const useCartStore = defineStore('cart', {
       localStorage.setItem('cart_customerPhone', this.customerPhone)
       localStorage.setItem('cart_tableNumber', this.tableNumber)
       localStorage.setItem('cart_specialNotes', this.specialNotes)
+      localStorage.setItem('cart_paymentMethod', this.paymentMethod)
     },
     addItem(product, qty = 1) {
       const existing = this.items.find(item => String(item.product?.id) === String(product.id));
@@ -54,11 +56,13 @@ export const useCartStore = defineStore('cart', {
       this.customerPhone = '';
       this.tableNumber = '';
       this.specialNotes = '';
+      this.paymentMethod = 'orange_money';
       localStorage.removeItem('cart_items');
       localStorage.removeItem('cart_customerName');
       localStorage.removeItem('cart_customerPhone');
       localStorage.removeItem('cart_tableNumber');
       localStorage.removeItem('cart_specialNotes');
+      localStorage.removeItem('cart_paymentMethod');
     }
   }
 });

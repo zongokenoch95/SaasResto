@@ -136,6 +136,18 @@ app.post('/api/commandes/:id/annuler-client', async (req, res) => {
   }
 });
 
+// PATCH /api/commandes/:id/mode-paiement : Modification du mode de paiement (Orange, Moov, Wave)
+app.patch('/api/commandes/:id/mode-paiement', async (req, res) => {
+  try {
+    const { modePaiement, mode_paiement } = req.body;
+    const finalMethod = modePaiement || mode_paiement;
+    const order = await db.updateOrderPaymentMethod(req.params.id, finalMethod);
+    res.json({ success: true, message: "Mode de paiement mis à jour", order, commande: order });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // ==========================================
 // 3. AUTHENTIFICATION DU PERSONNEL (RESTAURANT)
 // ==========================================

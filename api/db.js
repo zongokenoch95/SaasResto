@@ -59,7 +59,7 @@ export async function initDb() {
     )
   `);
 
-  // 2. Table Commandes
+  // 2. Table Commandes (avec mode de paiement Orange Money, Moov Money, Wave)
   await run(`
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY,
@@ -70,6 +70,7 @@ export async function initDb() {
       table_number INTEGER NOT NULL,
       special_notes TEXT,
       montant_total INTEGER NOT NULL,
+      mode_paiement TEXT DEFAULT 'orange_money',
       statut TEXT NOT NULL,
       created_at DATETIME NOT NULL,
       expires_at DATETIME NOT NULL,
@@ -78,6 +79,13 @@ export async function initDb() {
       cancelled_at DATETIME
     )
   `);
+
+  // Migration automatique de la colonne mode_paiement si la table existait déjà
+  try {
+    await run(`ALTER TABLE orders ADD COLUMN mode_paiement TEXT DEFAULT 'orange_money'`);
+  } catch (err) {
+    // Colonne déjà existante
+  }
 
   // 3. Table Articles de Commande
   await run(`
@@ -183,6 +191,8 @@ function formatOrder(orderRow, items = []) {
     specialNotes: orderRow.special_notes || '',
     montantTotal: orderRow.montant_total,
     total: orderRow.montant_total,
+    modePaiement: orderRow.mode_paiement || 'orange_money',
+    mode_paiement: orderRow.mode_paiement || 'orange_money',
     statut: orderRow.statut,
     status: orderRow.statut,
     createdAt: orderRow.created_at,
@@ -236,6 +246,8 @@ export async function createOrderTransaction(orderData) {
     customerPhone = '',
     tableNumber = 1,
     specialNotes = '',
+    modePaiement = 'orange_money',
+    mode_paiement = 'orange_money',
     items = [],
     montantTotal = 0,
     total = 0
@@ -243,6 +255,7 @@ export async function createOrderTransaction(orderData) {
 
   const finalPhone = numeroClient || customerPhone || '';
   const finalTotal = Number(montantTotal || total || 0);
+  const finalPaymentMethod = modePaiement || mode_paiement || 'orange_money';
 
   if (!items || items.length === 0) {
     throw new Error('Le panier est vide');
@@ -276,11 +289,11 @@ export async function createOrderTransaction(orderData) {
       await run('UPDATE products SET stock = stock - ? WHERE id = ?', [qty, prodId]);
     }
 
-    // 3. Insertion de la commande
+    // 3. Insertion de la commande avec mode de paiement
     await run(
-      `INSERT INTO orders (id, restaurant_id, customer_name, numero_client, customer_phone, table_number, special_notes, montant_total, statut, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EN_ATTENTE_DE_PAIEMENT', ?, ?)`,
-      [orderId, restaurantId, customerName, finalPhone, finalPhone, Number(tableNumber) || 1, specialNotes, finalTotal, now.toISOString(), expiresAt]
+      `INSERT INTO orders (id, restaurant_id, customer_name, numero_client, customer_phone, table_number, special_notes, montant_total, mode_paiement, statut, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EN_ATTENTE_DE_PAIEMENT', ?, ?)`,
+      [orderId, restaurantId, customerName, finalPhone, finalPhone, Number(tableNumber) || 1, specialNotes, finalTotal, finalPaymentMethod, now.toISOString(), expiresAt]
     );
 
     // 4. Insertion des lignes de commande (order_items)
@@ -309,6 +322,8 @@ export async function createOrderTransaction(orderData) {
       customerPhone: finalPhone,
       tableNumber: Number(tableNumber) || 1,
       specialNotes,
+      modePaiement: finalPaymentMethod,
+      mode_paiement: finalPaymentMethod,
       items,
       montantTotal: finalTotal,
       total: finalTotal,
@@ -433,6 +448,23 @@ export async function finishOrderCuisine(orderId) {
   return getOrderById(orderId);
 }
 
+// Mise à jour du mode de paiement pour une commande en attente
+export async function updateOrderPaymentMethod(orderId, modePaiement) {
+  const allowed = ['orange_money', 'moov_money', 'wave'];
+  if (!allowed.includes(modePaiement)) {
+    throw new Error(`Mode de paiement non supporté : ${modePaiement}`);
+  }
+
+  const order = await get('SELECT id, statut FROM orders WHERE id = ?', [orderId]);
+  if (!order) throw new Error('Commande non trouvée');
+  if (order.statut !== 'EN_ATTENTE_DE_PAIEMENT') {
+    throw new Error('Impossible de modifier le moyen de paiement pour cette commande');
+  }
+
+  await run(`UPDATE orders SET mode_paiement = ? WHERE id = ?`, [modePaiement, orderId]);
+  return getOrderById(orderId);
+}
+
 export default {
   initDb,
   getAllProducts,
@@ -442,9 +474,11 @@ export default {
   checkAndExpireOrders,
   getOrderById,
   cancelOrderClient,
+  updateOrderPaymentMethod,
   getPendingCaisseOrders,
   validateOrderCaisse,
   getActiveCuisineOrders,
   finishOrderCuisine
 };
+
 
