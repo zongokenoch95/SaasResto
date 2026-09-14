@@ -1,13 +1,95 @@
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
+import http from 'http';
+import { Server } from 'socket.io';
 import db from './db.js';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST', 'PATCH', 'DELETE']
+  }
+});
 
 app.use(cors());
 app.use(express.json());
+
+// ==========================================
+// GESTION TEMPS RÉEL (SOCKET.IO)
+// ==========================================
+io.on('connection', (socket) => {
+  // Client écoute sa commande spécifique
+  socket.on('join:order', (orderId) => {
+    if (orderId) {
+      socket.join(`order:${orderId}`);
+    }
+  });
+
+  socket.on('leave:order', (orderId) => {
+    if (orderId) {
+      socket.leave(`order:${orderId}`);
+    }
+  });
+
+  // Personnel restaurant écoute son rôle (caisse, cuisine, admin)
+  socket.on('join:staff', (role) => {
+    if (['caisse', 'cuisine', 'admin'].includes(role)) {
+      socket.join(`staff:${role}`);
+    }
+  });
+});
+
+export function emitOrderCreated(order) {
+  io.to('staff:caisse').to('staff:admin').emit('order:created', order);
+  io.emit('order:new', order);
+}
+
+export function emitPaymentMethodUpdated(order) {
+  io.to(`order:${order.id}`).emit('order:payment_updated', order);
+  io.to('staff:caisse').to('staff:admin').emit('order:payment_updated', order);
+}
+
+export function emitOrderCancelled(order) {
+  io.to(`order:${order.id}`).emit('order:status_changed', { orderId: order.id, statut: order.statut, order });
+  io.to('staff:caisse').to('staff:admin').emit('order:cancelled', order);
+}
+
+export function emitOrderValidated(order) {
+  io.to(`order:${order.id}`).emit('order:status_changed', { orderId: order.id, statut: order.statut, order });
+  io.to('staff:caisse').to('staff:admin').emit('order:caisse_validated', order);
+  io.to('staff:cuisine').to('staff:admin').emit('order:validated', order);
+}
+
+export function emitOrderReady(order) {
+  io.to(`order:${order.id}`).emit('order:status_changed', { orderId: order.id, statut: order.statut, order });
+  io.to('staff:caisse').to('staff:admin').emit('order:ready', order);
+  io.to('staff:cuisine').emit('order:cuisine_ready', order);
+}
+
+export function emitOrderExpired(orderId) {
+  io.to(`order:${orderId}`).emit('order:status_changed', { orderId, statut: 'ANNULEE_EXPIREE' });
+  io.to('staff:caisse').to('staff:admin').emit('order:expired', { id: orderId });
+}
+
+// Vérification périodique des expirations avec notification temps réel
+const expirationInterval = setInterval(async () => {
+  try {
+    const expiredIds = await db.checkAndExpireOrders();
+    if (expiredIds && expiredIds.length > 0) {
+      for (const id of expiredIds) {
+        emitOrderExpired(id);
+      }
+    }
+  } catch (err) {
+    // Silencieux
+  }
+}, 5000);
+expirationInterval.unref();
 
 // Initialisation de la base de données relationnelle SQLite
 await db.initDb();
@@ -87,6 +169,7 @@ app.get('/api/products/:id', async (req, res) => {
 app.post(['/api/commandes', '/api/orders'], async (req, res) => {
   try {
     const newOrder = await db.createOrderTransaction(req.body);
+    emitOrderCreated(newOrder);
     res.status(201).json(newOrder);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -130,6 +213,7 @@ app.get('/api/commandes/:id/statut', async (req, res) => {
 app.post('/api/commandes/:id/annuler-client', async (req, res) => {
   try {
     const order = await db.cancelOrderClient(req.params.id);
+    emitOrderCancelled(order);
     res.json({ success: true, message: "Commande annulée et stock libéré", order, commande: order });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -142,6 +226,7 @@ app.patch('/api/commandes/:id/mode-paiement', async (req, res) => {
     const { modePaiement, mode_paiement } = req.body;
     const finalMethod = modePaiement || mode_paiement;
     const order = await db.updateOrderPaymentMethod(req.params.id, finalMethod);
+    emitPaymentMethodUpdated(order);
     res.json({ success: true, message: "Mode de paiement mis à jour", order, commande: order });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -231,6 +316,7 @@ app.get('/api/caisse/commandes/en-attente', requireAuth(['caisse', 'admin']), as
 app.post('/api/caisse/commandes/:id/valider', requireAuth(['caisse', 'admin']), async (req, res) => {
   try {
     const order = await db.validateOrderCaisse(req.params.id);
+    emitOrderValidated(order);
     res.json({ success: true, message: "Encaissement validé avec succès", order, commande: order });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -255,12 +341,15 @@ app.get('/api/cuisine/commandes-actives', requireAuth(['cuisine', 'caisse', 'adm
 app.post('/api/cuisine/commandes/:id/terminer', requireAuth(['cuisine', 'caisse', 'admin']), async (req, res) => {
   try {
     const order = await db.finishOrderCuisine(req.params.id);
+    emitOrderReady(order);
     res.json({ success: true, message: "Commande prête à servir", order, commande: order });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`✅ Serveur backend RestoPremium démarré sur http://localhost:${PORT}`);
 });
+
+export { app, server, io };

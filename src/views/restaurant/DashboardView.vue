@@ -7,6 +7,7 @@ import {
   getCuisineCommandesActives, 
   terminerCommandeCuisine 
 } from '@/services/api'
+import { getSocket, joinStaffRoom, isConnected as socketConnected } from '@/services/socket'
 import { useAuthStore } from '@/stores/authStore'
 import Navbar from '@/components/Navbar.vue'
 
@@ -116,6 +117,35 @@ const getOpLabel = (method) => {
   return 'Orange Money'
 }
 
+// Carillon d'annonce Web Audio API pour la Cuisine KDS (accord 3 tons)
+const playKitchenChimeSound = () => {
+  if (!soundEnabled.value) return
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext
+    if (!AudioContext) return
+    const ctx = new AudioContext()
+
+    const playTone = (freq, delay, dur) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'triangle'
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + delay)
+      gain.gain.setValueAtTime(0.25, ctx.currentTime + delay)
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + dur)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(ctx.currentTime + delay)
+      osc.stop(ctx.currentTime + delay + dur)
+    }
+
+    playTone(523.25, 0, 0.18)      // Do5
+    playTone(659.25, 0.12, 0.18)   // Mi5
+    playTone(783.99, 0.24, 0.35)   // Sol5
+  } catch (err) {
+    console.warn("Audio non autorisé ou non supporté:", err)
+  }
+}
+
 // Action Caisse : Valider l'encaissement Mobile Money
 const handleValiderEncaissement = async (orderId) => {
   if (!confirm("Avez-vous bien vérifié la réception des fonds sur votre application de paiement (Orange Max it, SMS Moov ou Wave Business) ?")) {
@@ -146,13 +176,91 @@ const handleTerminerCuisine = async (orderId) => {
   }
 }
 
+// Gestionnaires d'événements temps réel WebSocket
+let socket = null
+
+const handleRealtimeOrderCreated = (order) => {
+  if (!order) return
+  if (authStore.isCaisse) {
+    if (!caisseOrders.value.some(o => o.id === order.id)) {
+      caisseOrders.value.unshift(order)
+      playNotificationSound()
+    }
+  }
+}
+
+const handleRealtimePaymentUpdated = (order) => {
+  if (!order) return
+  const idx = caisseOrders.value.findIndex(o => o.id === order.id)
+  if (idx !== -1) {
+    caisseOrders.value[idx] = { ...caisseOrders.value[idx], ...order }
+  }
+}
+
+const handleRealtimeOrderCancelled = (order) => {
+  if (!order) return
+  caisseOrders.value = caisseOrders.value.filter(o => o.id !== order.id)
+}
+
+const handleRealtimeOrderExpired = ({ id }) => {
+  caisseOrders.value = caisseOrders.value.filter(o => o.id !== id)
+}
+
+const handleRealtimeOrderValidated = (order) => {
+  if (!order) return
+  // Retirer de la caisse
+  caisseOrders.value = caisseOrders.value.filter(o => o.id !== order.id)
+
+  // Ajouter à la cuisine
+  if (authStore.isCuisine) {
+    if (!cuisineOrders.value.some(o => o.id === order.id)) {
+      cuisineOrders.value.unshift(order)
+      playKitchenChimeSound()
+    }
+  }
+}
+
+const handleRealtimeOrderReady = (order) => {
+  if (!order) return
+  cuisineOrders.value = cuisineOrders.value.filter(o => o.id !== order.id)
+}
+
 onMounted(() => {
   refreshData()
-  pollTimer = setInterval(refreshData, 3500)
+
+  // Connexion WebSocket
+  joinStaffRoom(authStore.role)
+  socket = getSocket()
+
+  socket.on('order:created', handleRealtimeOrderCreated)
+  socket.on('order:new', handleRealtimeOrderCreated)
+  socket.on('order:payment_updated', handleRealtimePaymentUpdated)
+  socket.on('order:cancelled', handleRealtimeOrderCancelled)
+  socket.on('order:expired', handleRealtimeOrderExpired)
+  socket.on('order:caisse_validated', (order) => {
+    caisseOrders.value = caisseOrders.value.filter(o => o.id !== order.id)
+  })
+  socket.on('order:validated', handleRealtimeOrderValidated)
+  socket.on('order:ready', handleRealtimeOrderReady)
+  socket.on('order:cuisine_ready', handleRealtimeOrderReady)
+
+  // Polling de secours dégradé (toutes les 10s)
+  pollTimer = setInterval(refreshData, 10000)
 })
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
+  if (socket) {
+    socket.off('order:created', handleRealtimeOrderCreated)
+    socket.off('order:new', handleRealtimeOrderCreated)
+    socket.off('order:payment_updated', handleRealtimePaymentUpdated)
+    socket.off('order:cancelled', handleRealtimeOrderCancelled)
+    socket.off('order:expired', handleRealtimeOrderExpired)
+    socket.off('order:caisse_validated')
+    socket.off('order:validated', handleRealtimeOrderValidated)
+    socket.off('order:ready', handleRealtimeOrderReady)
+    socket.off('order:cuisine_ready', handleRealtimeOrderReady)
+  }
 })
 </script>
 
@@ -165,7 +273,10 @@ onUnmounted(() => {
       <header class="dashboard-header">
         <div class="header-titles">
           <h1>Dashboard Restaurant</h1>
-          <span class="live-badge">● Synchronisation en direct (3s)</span>
+          <span class="live-badge" :class="{ 'live-active': socketConnected, 'live-fallback': !socketConnected }">
+            <template v-if="socketConnected">⚡ En direct (WebSocket)</template>
+            <template v-else>● Mode secours (Polling)</template>
+          </span>
         </div>
 
         <div class="header-controls">
@@ -181,7 +292,7 @@ onUnmounted(() => {
           </div>
 
           <button 
-            v-if="authStore.isCaisse"
+            v-if="authStore.isCaisse || authStore.isCuisine"
             class="btn-audio-toggle" 
             :class="{ active: soundEnabled }"
             @click="soundEnabled = !soundEnabled"
@@ -197,7 +308,7 @@ onUnmounted(() => {
               :class="{ active: activeTab === 'caisse' }"
               @click="activeTab = 'caisse'"
             >
-              🟠 Caisse (Orange Money)
+              🟠 Caisse (Mobile Money)
               <span v-if="caisseOrders.length > 0" class="tab-badge pulse">
                 {{ caisseOrders.length }}
               </span>
@@ -369,9 +480,25 @@ onUnmounted(() => {
 }
 
 .live-badge {
-  color: #2ecc71;
   font-size: 0.85rem;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+}
+
+.live-badge.live-active {
+  color: #2ecc71;
+  background: rgba(46, 204, 113, 0.1);
+  border: 1px solid rgba(46, 204, 113, 0.25);
+}
+
+.live-badge.live-fallback {
+  color: #f39c12;
+  background: rgba(243, 156, 18, 0.1);
+  border: 1px solid rgba(243, 156, 18, 0.25);
 }
 
 .header-controls {

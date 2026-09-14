@@ -213,6 +213,7 @@ export async function checkAndExpireOrders() {
     [now]
   );
 
+  const expiredIds = [];
   for (const exp of expiredOrders) {
     // Transaction pour marquer expiré et restituer les stocks
     await run('BEGIN TRANSACTION');
@@ -230,11 +231,13 @@ export async function checkAndExpireOrders() {
         );
       }
       await run('COMMIT');
+      expiredIds.push(exp.id);
     } catch (err) {
       await run('ROLLBACK');
       console.error(`Erreur expiration commande ${exp.id}:`, err);
     }
   }
+  return expiredIds;
 }
 
 // Création de commande avec vérification et réservation transactionnelle
@@ -478,7 +481,10 @@ export default {
   getPendingCaisseOrders,
   validateOrderCaisse,
   getActiveCuisineOrders,
-  finishOrderCuisine
+  finishOrderCuisine,
+  run,
+  get,
+  all
 };
 
 

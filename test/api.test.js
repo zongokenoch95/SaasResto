@@ -1,4 +1,6 @@
 import db from '../api/db.js';
+import { io as ClientIO } from 'socket.io-client';
+import { server, emitOrderValidated } from '../api/server.js';
 
 async function runTests() {
   console.log('🧪 Démarrage de la suite de tests automatisée (CI/CD)...\n');
@@ -15,9 +17,15 @@ async function runTests() {
     }
   }
 
+  let clientSocket = null;
+
   try {
-    // 1. Initialisation de la base SQLite et seeding
+    // 1. Initialisation de la base SQLite, purge et seeding propre
     await db.initDb();
+    await db.checkAndExpireOrders();
+    await db.run("DELETE FROM orders WHERE customer_name LIKE 'Client CI%'");
+    await db.run("DELETE FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)");
+    await db.run("UPDATE products SET stock = 20 WHERE id = 1");
 
     // 2. Catalogue de produits
     const products = await db.getAllProducts();
@@ -121,13 +129,57 @@ async function runTests() {
     const updatedOrder = await db.getOrderById(moovOrder.id);
     assert(updatedOrder.modePaiement === 'wave', 'Bascule dynamique d\'opérateur réussie (Moov -> Wave)');
 
+    // 9. Synchronisation Temps Réel WebSockets (Socket.io)
+    clientSocket = ClientIO('http://localhost:3000', {
+      transports: ['websocket'],
+      forceNew: true
+    });
+
+    await new Promise((resolve) => {
+      clientSocket.on('connect', resolve);
+    });
+    assert(clientSocket.connected, 'Connexion client WebSocket établie avec succès');
+
+    // Test de réception d\'événement en temps réel dans une salle de commande
+    const eventPromise = new Promise((resolve) => {
+      clientSocket.on('order:status_changed', (payload) => {
+        resolve(payload);
+      });
+    });
+
+    clientSocket.emit('join:order', 'CMD-SOCKET-REALTIME-99');
+    await new Promise(r => setTimeout(r, 120));
+
+    emitOrderValidated({ id: 'CMD-SOCKET-REALTIME-99', statut: 'EN_PREPARATION' });
+
+    const receivedPayload = await Promise.race([
+      eventPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout WebSocket')), 3000))
+    ]);
+
+    assert(
+      receivedPayload && receivedPayload.statut === 'EN_PREPARATION',
+      'Notification temps réel reçue instantanément via WebSocket'
+    );
+
+    // 10. Nettoyage et isolation des tests
+    await db.run("DELETE FROM orders WHERE customer_name LIKE 'Client CI%'");
+    await db.run("DELETE FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)");
+    await db.run("UPDATE products SET stock = ? WHERE id = 1", [initialStock]);
+
+    if (clientSocket) {
+      clientSocket.disconnect();
+    }
+    server.close();
+
     console.log(`\n📊 Bilan des tests : ${passed}/${total} assertions réussies avec succès.`);
     process.exit(passed === total ? 0 : 1);
   } catch (err) {
     console.error('\n❌ Erreur inattendue durant l\'exécution des tests :', err);
+    if (clientSocket) clientSocket.disconnect();
+    server.close();
     process.exit(1);
   }
 }
 
 runTests();
-

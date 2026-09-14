@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useOrderStore } from '@/stores/orderStore'
 import { updateCommandePaymentMethod } from '@/services/api'
+import { getSocket, joinOrderRoom, leaveOrderRoom, isConnected as socketConnected } from '@/services/socket'
 import QRCode from 'qrcode'
 import Navbar from '@/components/Navbar.vue'
 import Footer from '@/components/Footer.vue'
@@ -196,6 +197,38 @@ const handleCancel = async () => {
   }
 }
 
+let socket = null
+
+const handleSocketStatus = (payload) => {
+  if (!payload) return
+  const newStatus = payload.statut || payload.order?.statut
+  if (!newStatus) return
+
+  if (order.value) {
+    order.value.statut = newStatus
+  }
+
+  if (['PAYEE', 'EN_PREPARATION', 'VALIDEE', 'PRETE'].includes(newStatus)) {
+    if (timerInterval) clearInterval(timerInterval)
+    if (pollingInterval) clearInterval(pollingInterval)
+    router.push(`/confirmation/${orderId.value}`)
+  } else if (newStatus === 'ANNULEE_PAR_CLIENT' || newStatus === 'ANNULEE_EXPIREE') {
+    if (timerInterval) clearInterval(timerInterval)
+    if (pollingInterval) clearInterval(pollingInterval)
+  }
+}
+
+const handleSocketPaymentUpdated = (updatedOrder) => {
+  if (updatedOrder && order.value) {
+    const op = updatedOrder.modePaiement || updatedOrder.mode_paiement
+    if (op && op !== (order.value.modePaiement || order.value.mode_paiement)) {
+      order.value.modePaiement = op
+      order.value.mode_paiement = op
+      generateQrCode()
+    }
+  }
+}
+
 onMounted(async () => {
   isLoading.value = true
   const initialData = await orderStore.fetchOrderStatus(orderId.value)
@@ -211,14 +244,26 @@ onMounted(async () => {
       return
     }
 
+    // Connexion WebSocket temps réel
+    joinOrderRoom(orderId.value)
+    socket = getSocket()
+    socket.on('order:status_changed', handleSocketStatus)
+    socket.on('order:payment_updated', handleSocketPaymentUpdated)
+
     timerInterval = setInterval(updateCountdown, 1000)
-    pollingInterval = setInterval(checkStatus, 3000)
+    // Polling de secours dégradé (sécurité réseau mobile)
+    pollingInterval = setInterval(checkStatus, 5000)
   }
 })
 
 onUnmounted(() => {
   if (timerInterval) clearInterval(timerInterval)
   if (pollingInterval) clearInterval(pollingInterval)
+  if (socket) {
+    socket.off('order:status_changed', handleSocketStatus)
+    socket.off('order:payment_updated', handleSocketPaymentUpdated)
+    leaveOrderRoom(orderId.value)
+  }
 })
 </script>
 
@@ -340,12 +385,22 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Attente active & Polling Indicator -->
-        <div class="polling-indicator">
-          <div class="pulsing-dot"></div>
+        <!-- Attente active & Synchronisation WebSocket / Polling -->
+        <div class="polling-indicator" :class="{ 'socket-live': socketConnected }">
+          <div class="pulsing-dot" :class="{ 'dot-live': socketConnected }"></div>
           <div class="polling-text">
-            <strong>Attente de validation par la caisse...</strong>
-            <span>La caisse vérifie la réception des fonds sur son terminal {{ currentOperator.shortName }} et valide votre commande. Cette page s'actualisera toute seule.</span>
+            <strong>
+              <template v-if="socketConnected">⚡ Synchronisation instantanée active</template>
+              <template v-else>Attente de validation par la caisse...</template>
+            </strong>
+            <span>
+              <template v-if="socketConnected">
+                Dès que la caisse valide vos fonds {{ currentOperator.shortName }}, votre écran basculera instantanément sans rechargement.
+              </template>
+              <template v-else>
+                La caisse vérifie la réception des fonds sur son terminal {{ currentOperator.shortName }} et valide votre commande. Cette page s'actualisera toute seule.
+              </template>
+            </span>
           </div>
         </div>
 
@@ -785,6 +840,12 @@ onUnmounted(() => {
   border-radius: 8px;
   padding: 1rem 1.4rem;
   margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.polling-indicator.socket-live {
+  background: rgba(46, 204, 113, 0.06);
+  border-color: rgba(46, 204, 113, 0.3);
 }
 
 .pulsing-dot {
@@ -794,6 +855,17 @@ onUnmounted(() => {
   border-radius: 50%;
   animation: pulse 1.5s infinite;
   flex-shrink: 0;
+}
+
+.pulsing-dot.dot-live {
+  background-color: #2ecc71;
+  animation: pulseLive 1.5s infinite;
+}
+
+@keyframes pulseLive {
+  0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
+  70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(46, 204, 113, 0); }
+  100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
 }
 
 @keyframes pulse {
