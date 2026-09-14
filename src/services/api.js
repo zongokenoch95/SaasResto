@@ -84,6 +84,18 @@ export function cancelCommandeClient(orderId) {
   });
 }
 
+export function updateCommandePaymentMethod(orderId, modePaiement) {
+  return fetch(`/api/commandes/${orderId}/mode-paiement`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ modePaiement })
+  }).then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Erreur changement mode paiement");
+    return data;
+  });
+}
+
 // ------------------------------------------------------------------
 // Caisse : Gestion des encaissements (Protégé: Caisse, Admin)
 // ------------------------------------------------------------------

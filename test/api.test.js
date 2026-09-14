@@ -103,6 +103,24 @@ async function runTests() {
     const readyOrder = await db.getOrderById(orderForPrep.id);
     assert(readyOrder.statut === 'PRETE', 'Commande terminée et marquée PRETE à servir');
 
+    // 8. Multi-Paiements Mobile Money : Moov Money & Wave
+    const moovOrder = await db.createOrderTransaction({
+      ...testOrder,
+      modePaiement: 'moov_money'
+    });
+    assert(moovOrder.modePaiement === 'moov_money', 'Support du mode Moov Money');
+
+    const waveOrder = await db.createOrderTransaction({
+      ...testOrder,
+      modePaiement: 'wave'
+    });
+    assert(waveOrder.modePaiement === 'wave', 'Support du mode Wave');
+
+    // Changement d'opérateur en cours de route
+    await db.updateOrderPaymentMethod(moovOrder.id, 'wave');
+    const updatedOrder = await db.getOrderById(moovOrder.id);
+    assert(updatedOrder.modePaiement === 'wave', 'Bascule dynamique d\'opérateur réussie (Moov -> Wave)');
+
     console.log(`\n📊 Bilan des tests : ${passed}/${total} assertions réussies avec succès.`);
     process.exit(passed === total ? 0 : 1);
   } catch (err) {

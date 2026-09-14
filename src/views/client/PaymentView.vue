@@ -1,7 +1,8 @@
-﻿<script setup>
+<script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useOrderStore } from '@/stores/orderStore'
+import { updateCommandePaymentMethod } from '@/services/api'
 import QRCode from 'qrcode'
 import Navbar from '@/components/Navbar.vue'
 import Footer from '@/components/Footer.vue'
@@ -17,23 +18,73 @@ const isCancelling = ref(false)
 const qrCodeDataUrl = ref('')
 const copied = ref(false)
 
-// Code marchand Orange Money Burkina (configurable)
-const CODE_MARCHAND = '654321'
+// Configuration Multi-Opérateurs Mobile Money
+const OPERATOR_CONFIG = {
+  orange_money: {
+    id: 'orange_money',
+    name: 'Orange Money Burkina',
+    shortName: 'Orange Money',
+    icon: '🟠',
+    merchantCode: '654321',
+    themeClass: 'theme-orange',
+    accentColor: '#ff7900',
+    type: 'ussd',
+    getUssd: (amount) => `*144*4*6*654321*${amount}#`,
+    getTelUrl: (amount) => `tel:*144*4*6*654321*${amount}%23`,
+    step1: 'Composez le code marchand sécurisé',
+    step2: 'Saisissez votre code secret Orange Money pour valider'
+  },
+  moov_money: {
+    id: 'moov_money',
+    name: 'Moov Money Burkina',
+    shortName: 'Moov Money',
+    icon: '🔵',
+    merchantCode: '54321',
+    themeClass: 'theme-moov',
+    accentColor: '#0066b3',
+    type: 'ussd',
+    getUssd: (amount) => `*555*4*1*54321*${amount}#`,
+    getTelUrl: (amount) => `tel:*555*4*1*54321*${amount}%23`,
+    step1: 'Composez le code marchand Moov sécurisé',
+    step2: 'Saisissez votre code secret Moov Money pour confirmer'
+  },
+  wave: {
+    id: 'wave',
+    name: 'Wave Burkina',
+    shortName: 'Wave',
+    icon: '🌊',
+    merchantPhone: '+226 77 00 00 00',
+    themeClass: 'theme-wave',
+    accentColor: '#1dc3f4',
+    type: 'direct',
+    getUssd: (amount) => `Virement Wave vers RestoPremium (${amount} FCFA)`,
+    getTelUrl: (amount) => `https://wave.com/send?phone=22677000000&amount=${amount}`,
+    step1: 'Scannez le QR Code Wave avec votre application Wave',
+    step2: 'Confirmez le transfert vers RestoPremium'
+  }
+}
 
-// Minuteur TTL
+// Opérateur actuellement sélectionné
+const currentOperator = computed(() => {
+  const method = order.value?.modePaiement || order.value?.mode_paiement || 'orange_money'
+  return OPERATOR_CONFIG[method] || OPERATOR_CONFIG.orange_money
+})
+
+// Minuteur TTL (10 minutes)
 const timeLeftSeconds = ref(600)
 let timerInterval = null
 let pollingInterval = null
 
-// Schémas USSD Orange Money
-const ussdCode = computed(() => {
-  const amount = order.value?.montantTotal || order.value?.total || 0
-  return `*144*4*6*${CODE_MARCHAND}*${amount}#`
+const orderAmount = computed(() => {
+  return order.value?.montantTotal || order.value?.total || 0
 })
 
-const ussdTelUrl = computed(() => {
-  const amount = order.value?.montantTotal || order.value?.total || 0
-  return `tel:*144*4*6*${CODE_MARCHAND}*${amount}%23`
+const currentUssdCode = computed(() => {
+  return currentOperator.value.getUssd(orderAmount.value)
+})
+
+const currentActionUrl = computed(() => {
+  return currentOperator.value.getTelUrl(orderAmount.value)
 })
 
 // Formatage du compte à rebours MM:SS
@@ -51,10 +102,25 @@ const isCancelled = computed(() => {
   return order.value?.statut === 'ANNULEE_PAR_CLIENT'
 })
 
-// Génération du QR Code pour écran Desktop
+// Changement d'opérateur en cours de paiement
+const switchOperator = async (newOp) => {
+  if (currentOperator.value.id === newOp) return
+  try {
+    await updateCommandePaymentMethod(orderId.value, newOp)
+    if (order.value) {
+      order.value.modePaiement = newOp
+      order.value.mode_paiement = newOp
+    }
+    await generateQrCode()
+  } catch (err) {
+    console.error('Erreur changement opérateur:', err)
+  }
+}
+
+// Génération du QR Code adapté à l'opérateur
 const generateQrCode = async () => {
   try {
-    qrCodeDataUrl.value = await QRCode.toDataURL(ussdTelUrl.value, {
+    qrCodeDataUrl.value = await QRCode.toDataURL(currentActionUrl.value, {
       width: 240,
       margin: 2,
       color: {
@@ -100,10 +166,10 @@ const updateCountdown = () => {
   }
 }
 
-// Copier le code USSD dans le presse-papier
-const copyUssd = async () => {
+// Copier le code ou le lien dans le presse-papier
+const copyCode = async () => {
   try {
-    await navigator.clipboard.writeText(ussdCode.value)
+    await navigator.clipboard.writeText(currentUssdCode.value)
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
   } catch (err) {
@@ -113,7 +179,7 @@ const copyUssd = async () => {
 
 // Annulation par le client
 const handleCancel = async () => {
-  if (!confirm("Voulez-vous vraiment annuler cette commande ? Les articles seront remis en stock.")) {
+  if (!confirm("Voulez-vous vraiment annuler votre commande ? Les articles seront remis en stock.")) {
     return
   }
 
@@ -140,16 +206,12 @@ onMounted(async () => {
     updateCountdown()
     await generateQrCode()
 
-    // Si déjà validé
     if (order.value.statut === 'PAYEE' || order.value.statut === 'EN_PREPARATION') {
       router.push(`/confirmation/${orderId.value}`)
       return
     }
 
-    // Minuteur chaque seconde
     timerInterval = setInterval(updateCountdown, 1000)
-
-    // Polling toutes les 3 secondes (spécification CONTEXT.md)
     pollingInterval = setInterval(checkStatus, 3000)
   }
 })
@@ -168,7 +230,7 @@ onUnmounted(() => {
       <!-- État Chargement -->
       <div v-if="isLoading" class="loading-state">
         <div class="spinner"></div>
-        <p>Initialisation de votre paiement Orange Money...</p>
+        <p>Initialisation de votre paiement...</p>
       </div>
 
       <!-- État Expiré -->
@@ -188,13 +250,30 @@ onUnmounted(() => {
       </div>
 
       <!-- Interface de Paiement Active -->
-      <div v-else-if="order" class="payment-card">
+      <div v-else-if="order" class="payment-card" :class="currentOperator.themeClass">
+        <!-- Barre de changement d'opérateur -->
+        <div class="operator-switcher">
+          <span class="switcher-title">Moyen de paiement :</span>
+          <div class="switcher-buttons">
+            <button 
+              v-for="op in Object.values(OPERATOR_CONFIG)" 
+              :key="op.id"
+              class="switch-btn"
+              :class="{ active: currentOperator.id === op.id, [op.id]: true }"
+              @click="switchOperator(op.id)"
+            >
+              <span>{{ op.icon }}</span>
+              <span>{{ op.shortName }}</span>
+            </button>
+          </div>
+        </div>
+
         <!-- En-tête & Minuteur TTL -->
         <div class="payment-header">
-          <div class="brand-om">
-            <span class="om-circle">🟠</span>
+          <div class="brand-badge">
+            <span class="brand-icon">{{ currentOperator.icon }}</span>
             <div>
-              <h3>Paiement Orange Money Burkina</h3>
+              <h3>Paiement {{ currentOperator.name }}</h3>
               <p class="ref-order">Réf: #{{ order.id || order.orderId }} · Table n°{{ order.tableNumber }}</p>
             </div>
           </div>
@@ -208,27 +287,35 @@ onUnmounted(() => {
         <!-- Montant à payer -->
         <div class="amount-banner">
           <span class="amount-label">Montant total à payer :</span>
-          <span class="amount-value">{{ (order.montantTotal || order.total || 0).toLocaleString() }} FCFA</span>
+          <span class="amount-value">{{ orderAmount.toLocaleString() }} FCFA</span>
         </div>
 
-        <!-- Instructions du paiement No-Aggregator -->
+        <!-- Instructions selon l'opérateur -->
         <div class="payment-methods-grid">
-          <!-- Option Mobile : Bouton direct tel:*144...# -->
+          <!-- Option Mobile : Bouton direct USSD ou Lien Wave -->
           <div class="method-card mobile-method">
-            <span class="badge-step">Option 1 · Sur votre Smartphone</span>
-            <h4>Lancement direct du composeur USSD</h4>
-            <p>Cliquez sur le bouton ci-dessous pour ouvrir automatiquement le code marchand dans votre application Téléphone :</p>
+            <span class="badge-step">Option 1 · Sur Smartphone</span>
+            <h4>
+              {{ currentOperator.type === 'ussd' ? 'Lancement direct du composeur USSD' : 'Lancement de l\'application Wave' }}
+            </h4>
+            <p>
+              {{ currentOperator.type === 'ussd' 
+                ? 'Cliquez pour ouvrir automatiquement le code marchand dans votre application Téléphone :' 
+                : 'Cliquez ci-dessous pour initier le transfert directement dans l\'application Wave :' }}
+            </p>
             
-            <a :href="ussdTelUrl" class="btn-ussd-call">
-              <span class="phone-icon">📞</span>
-              <span>Composer {{ ussdCode }}</span>
+            <a :href="currentActionUrl" class="btn-action-call" :class="currentOperator.id">
+              <span class="phone-icon">{{ currentOperator.type === 'ussd' ? '📞' : '🌊' }}</span>
+              <span>
+                {{ currentOperator.type === 'ussd' ? `Composer ${currentUssdCode}` : `Transférer ${orderAmount.toLocaleString()} FCFA sur Wave` }}
+              </span>
             </a>
 
-            <div class="ussd-manual">
-              <span>Ou composez manuellement :</span>
+            <div class="manual-box">
+              <span>{{ currentOperator.type === 'ussd' ? 'Ou composez manuellement :' : 'Informations de virement :' }}</span>
               <div class="code-box">
-                <code>{{ ussdCode }}</code>
-                <button @click="copyUssd" class="btn-copy">
+                <code>{{ currentUssdCode }}</code>
+                <button @click="copyCode" class="btn-copy">
                   {{ copied ? 'Copié ✓' : 'Copier' }}
                 </button>
               </div>
@@ -239,13 +326,17 @@ onUnmounted(() => {
           <div class="method-card desktop-method">
             <span class="badge-step">Option 2 · Depuis un Ordinateur</span>
             <h4>Scannez avec votre téléphone</h4>
-            <p>Pointez l'appareil photo de votre smartphone pour déclencher immédiatement l'appel USSD :</p>
+            <p>
+              {{ currentOperator.type === 'ussd' 
+                ? 'Pointez l\'appareil photo de votre smartphone pour déclencher immédiatement l\'appel USSD :' 
+                : 'Scannez avec l\'appareil photo ou l\'application Wave pour régler instantanément :' }}
+            </p>
 
             <div class="qr-container" v-if="qrCodeDataUrl">
-              <img :src="qrCodeDataUrl" alt="QR Code Paiement Orange Money" class="qr-image" />
+              <img :src="qrCodeDataUrl" :alt="`QR Code Paiement ${currentOperator.shortName}`" class="qr-image" />
             </div>
 
-            <span class="qr-hint">Compose directement le code marchand sécurisé</span>
+            <span class="qr-hint">Paiement direct sécurisé sans intermédiaire</span>
           </div>
         </div>
 
@@ -254,7 +345,7 @@ onUnmounted(() => {
           <div class="pulsing-dot"></div>
           <div class="polling-text">
             <strong>Attente de validation par la caisse...</strong>
-            <span>La caisse contrôle l'arrivée des fonds et valide votre commande. Cette page s'actualisera toute seule.</span>
+            <span>La caisse vérifie la réception des fonds sur son terminal {{ currentOperator.shortName }} et valide votre commande. Cette page s'actualisera toute seule.</span>
           </div>
         </div>
 
@@ -282,6 +373,7 @@ onUnmounted(() => {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  font-family: 'Inter', sans-serif;
 }
 
 .payment-container {
@@ -341,7 +433,6 @@ onUnmounted(() => {
 .error-card {
   border-color: rgba(231, 76, 60, 0.4);
 }
-
 .error-card h2 {
   color: #e74c3c;
 }
@@ -349,7 +440,6 @@ onUnmounted(() => {
 .warning-card {
   border-color: rgba(243, 156, 18, 0.4);
 }
-
 .warning-card h2 {
   color: #f39c12;
 }
@@ -357,96 +447,168 @@ onUnmounted(() => {
 .btn-primary {
   display: inline-block;
   background-color: #d4af37;
-  color: #000;
-  font-weight: bold;
+  color: #0b0b0b;
   padding: 0.8rem 1.8rem;
   border-radius: 4px;
+  font-weight: bold;
   text-decoration: none;
+  transition: background-color 0.2s;
 }
 
-/* Carte de paiement principale */
+.btn-primary:hover {
+  background-color: #c5a059;
+}
+
+/* Carte de Paiement Principale */
 .payment-card {
   background-color: #141414;
-  border: 1px solid #282828;
   border-radius: 12px;
-  padding: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 2.2rem;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  transition: border-color 0.3s ease;
 }
 
+.payment-card.theme-orange {
+  border-color: rgba(255, 121, 0, 0.35);
+}
+
+.payment-card.theme-moov {
+  border-color: rgba(0, 102, 179, 0.35);
+}
+
+.payment-card.theme-wave {
+  border-color: rgba(29, 195, 244, 0.35);
+}
+
+/* Sélecteur d'opérateur rapide */
+.operator-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.8rem;
+  padding-bottom: 1.2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.switcher-title {
+  font-size: 0.85rem;
+  color: #888;
+  font-weight: 500;
+}
+
+.switcher-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.switch-btn {
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #bbb;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.switch-btn:hover {
+  background: #2a2a2a;
+  color: #fff;
+}
+
+.switch-btn.active.orange_money {
+  background: rgba(255, 121, 0, 0.15);
+  border-color: #ff7900;
+  color: #ff7900;
+  font-weight: 600;
+}
+
+.switch-btn.active.moov_money {
+  background: rgba(0, 102, 179, 0.15);
+  border-color: #0066b3;
+  color: #3399ff;
+  font-weight: 600;
+}
+
+.switch-btn.active.wave {
+  background: rgba(29, 195, 244, 0.15);
+  border-color: #1dc3f4;
+  color: #1dc3f4;
+  font-weight: 600;
+}
+
+/* En-tête */
 .payment-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #222;
-  padding-bottom: 1.5rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
 }
 
-.brand-om {
+.brand-badge {
   display: flex;
   align-items: center;
   gap: 1rem;
 }
 
-.om-circle {
+.brand-icon {
   font-size: 2.2rem;
 }
 
-.brand-om h3 {
+.brand-badge h3 {
   font-size: 1.25rem;
-  color: #ff6600;
-  margin: 0 0 0.2rem 0;
-  font-weight: bold;
+  margin-bottom: 0.2rem;
+  color: #fff;
 }
 
 .ref-order {
-  color: #888;
   font-size: 0.85rem;
-  margin: 0;
+  color: #888;
 }
 
 .countdown-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background-color: #1a1a1a;
+  background: #1c1c1c;
   border: 1px solid #333;
-  padding: 0.6rem 1.2rem;
   border-radius: 8px;
+  padding: 0.6rem 1.2rem;
+  text-align: right;
 }
 
 .countdown-box.warning-time {
   border-color: #e74c3c;
-  background-color: #2c1a1a;
-}
-
-.countdown-box.warning-time .countdown-value {
-  color: #e74c3c;
-  animation: blink 1s infinite;
-}
-
-@keyframes blink {
-  50% { opacity: 0.5; }
+  background: rgba(231, 76, 60, 0.1);
 }
 
 .countdown-label {
-  font-size: 0.7rem;
+  display: block;
+  font-size: 0.65rem;
   color: #888;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
 }
 
 .countdown-value {
+  font-family: monospace;
   font-size: 1.6rem;
   font-weight: bold;
-  font-family: monospace;
   color: #d4af37;
 }
 
+.warning-time .countdown-value {
+  color: #ff6b6b;
+}
+
 .amount-banner {
-  background: linear-gradient(135deg, #1f1408, #2a1b0b);
-  border: 1px solid rgba(212, 175, 55, 0.3);
+  background: linear-gradient(135deg, #181818 0%, #1f1f1f 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  padding: 1.2rem 1.6rem;
+  padding: 1.2rem 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -454,15 +616,14 @@ onUnmounted(() => {
 }
 
 .amount-label {
-  color: #ccc;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  color: #bbb;
 }
 
 .amount-value {
-  color: #d4af37;
-  font-size: 2rem;
+  font-size: 1.8rem;
   font-weight: bold;
-  font-family: 'Playfair Display', serif;
+  color: #d4af37;
 }
 
 .payment-methods-grid {
@@ -473,8 +634,8 @@ onUnmounted(() => {
 }
 
 .method-card {
-  background-color: #191919;
-  border: 1px solid #292929;
+  background: #181818;
+  border: 1px solid #282828;
   border-radius: 8px;
   padding: 1.5rem;
   display: flex;
@@ -482,169 +643,190 @@ onUnmounted(() => {
 }
 
 .badge-step {
+  display: inline-block;
   align-self: flex-start;
-  background-color: rgba(255, 102, 0, 0.15);
-  color: #ff6600;
-  font-size: 0.75rem;
-  padding: 0.2rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: bold;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+  padding: 0.25rem 0.6rem;
   border-radius: 4px;
-  font-weight: 600;
   margin-bottom: 0.8rem;
+  text-transform: uppercase;
 }
 
 .method-card h4 {
+  font-size: 1.05rem;
   color: #fff;
-  font-size: 1.1rem;
-  margin: 0 0 0.5rem 0;
+  margin-bottom: 0.5rem;
 }
 
 .method-card p {
-  color: #999;
   font-size: 0.85rem;
-  line-height: 1.5;
+  color: #888;
+  line-height: 1.4;
   margin-bottom: 1.2rem;
 }
 
-.btn-ussd-call {
+.btn-action-call {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.6rem;
-  background-color: #ff6600;
   color: #fff;
   text-decoration: none;
   font-weight: bold;
-  padding: 1rem;
+  padding: 0.9rem 1.2rem;
   border-radius: 6px;
+  font-size: 0.9rem;
+  transition: all 0.2s;
   text-align: center;
-  font-size: 1rem;
-  transition: background-color 0.2s, transform 0.1s;
 }
 
-.btn-ussd-call:hover {
+.btn-action-call.orange_money {
+  background-color: #ff6600;
+}
+.btn-action-call.orange_money:hover {
   background-color: #e65c00;
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
-.phone-icon {
-  font-size: 1.2rem;
+.btn-action-call.moov_money {
+  background-color: #0066b3;
+}
+.btn-action-call.moov_money:hover {
+  background-color: #00508f;
+  transform: translateY(-1px);
 }
 
-.ussd-manual {
-  margin-top: 1.5rem;
-  border-top: 1px solid #282828;
+.btn-action-call.wave {
+  background-color: #0099cc;
+}
+.btn-action-call.wave:hover {
+  background-color: #0088b8;
+  transform: translateY(-1px);
+}
+
+.manual-box {
+  margin-top: 1.2rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
   padding-top: 1rem;
 }
 
-.ussd-manual span {
-  font-size: 0.8rem;
-  color: #888;
+.manual-box span {
+  display: block;
+  font-size: 0.75rem;
+  color: #777;
+  margin-bottom: 0.4rem;
 }
 
 .code-box {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background-color: #111;
+  background: #0d0d0d;
   border: 1px solid #333;
-  padding: 0.5rem 0.8rem;
   border-radius: 4px;
-  margin-top: 0.4rem;
+  overflow: hidden;
 }
 
 .code-box code {
-  color: #ffaa00;
-  font-weight: bold;
-  font-size: 0.95rem;
+  flex: 1;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.82rem;
+  color: #d4af37;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 .btn-copy {
-  background: transparent;
-  border: 1px solid #555;
-  color: #ccc;
-  padding: 0.3rem 0.6rem;
-  border-radius: 4px;
+  background: #2a2a2a;
+  border: none;
+  color: #fff;
+  padding: 0 0.8rem;
   font-size: 0.75rem;
   cursor: pointer;
+  transition: background-color 0.2s;
 }
 
 .btn-copy:hover {
-  border-color: #d4af37;
-  color: #d4af37;
+  background: #3a3a3a;
+}
+
+.desktop-method {
+  align-items: center;
+  text-align: center;
 }
 
 .qr-container {
   background: #fff;
   padding: 10px;
   border-radius: 8px;
-  display: flex;
-  justify-content: center;
-  align-self: center;
-  margin: 0.5rem 0;
+  margin-bottom: 0.8rem;
+  display: inline-block;
 }
 
 .qr-image {
-  width: 190px;
-  height: 190px;
   display: block;
+  width: 170px;
+  height: 170px;
 }
 
 .qr-hint {
-  text-align: center;
   font-size: 0.75rem;
   color: #777;
-  margin-top: 0.5rem;
 }
 
-/* Indicateur de polling */
+/* Polling */
 .polling-indicator {
-  background-color: #121815;
-  border: 1px solid rgba(46, 204, 113, 0.3);
-  padding: 1rem 1.4rem;
-  border-radius: 8px;
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin-bottom: 2rem;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 1rem 1.4rem;
+  margin-bottom: 1.5rem;
 }
 
 .pulsing-dot {
-  width: 14px;
-  height: 14px;
-  background-color: #2ecc71;
+  width: 12px;
+  height: 12px;
+  background-color: #d4af37;
   border-radius: 50%;
-  box-shadow: 0 0 0 rgba(46, 204, 113, 0.4);
   animation: pulse 1.5s infinite;
+  flex-shrink: 0;
 }
 
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
-  70% { box-shadow: 0 0 0 10px rgba(46, 204, 113, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+  0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.7); }
+  70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(212, 175, 55, 0); }
+  100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(212, 175, 55, 0); }
+}
+
+.polling-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .polling-text strong {
-  display: block;
-  color: #2ecc71;
   font-size: 0.95rem;
-  margin-bottom: 0.2rem;
+  color: #fff;
 }
 
 .polling-text span {
-  color: #999;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  color: #888;
 }
 
 .payment-actions {
-  display: flex;
-  justify-content: center;
+  text-align: center;
 }
 
 .btn-cancel {
   background: transparent;
   border: 1px solid rgba(231, 76, 60, 0.4);
-  color: #ff8888;
-  padding: 0.7rem 1.5rem;
+  color: #e74c3c;
+  padding: 0.6rem 1.4rem;
   border-radius: 4px;
   font-size: 0.85rem;
   cursor: pointer;
@@ -652,9 +834,13 @@ onUnmounted(() => {
 }
 
 .btn-cancel:hover:not(:disabled) {
-  background-color: rgba(231, 76, 60, 0.15);
+  background: rgba(231, 76, 60, 0.1);
   border-color: #e74c3c;
-  color: #ff6666;
+}
+
+.btn-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 @media (max-width: 768px) {
@@ -663,8 +849,12 @@ onUnmounted(() => {
   }
   .payment-header {
     flex-direction: column;
-    gap: 1rem;
     align-items: flex-start;
+    gap: 1rem;
+  }
+  .countdown-box {
+    align-self: stretch;
+    text-align: center;
   }
 }
 </style>

@@ -103,9 +103,22 @@ const refreshData = async () => {
   }
 }
 
-// Action Caisse : Valider l'encaissement Orange Money
+// Helpers pour les opérateurs Mobile Money (Orange, Moov, Wave)
+const getOpBadgeText = (method) => {
+  if (method === 'moov_money') return '🔵 Moov'
+  if (method === 'wave') return '🌊 Wave'
+  return '🟠 Orange'
+}
+
+const getOpLabel = (method) => {
+  if (method === 'moov_money') return 'Moov Money'
+  if (method === 'wave') return 'Wave'
+  return 'Orange Money'
+}
+
+// Action Caisse : Valider l'encaissement Mobile Money
 const handleValiderEncaissement = async (orderId) => {
-  if (!confirm("Avez-vous bien vérifié la réception des fonds sur Orange Max it ou votre téléphone marchand ?")) {
+  if (!confirm("Avez-vous bien vérifié la réception des fonds sur votre application de paiement (Orange Max it, SMS Moov ou Wave Business) ?")) {
     return
   }
 
@@ -210,7 +223,7 @@ onUnmounted(() => {
         <div class="caisse-intro-bar">
           <div class="caisse-help">
             <strong>Procédure Caissier :</strong>
-            <span>1. Repérez le numéro Orange Money et le montant. 2. Vérifiez le SMS ou l'app <strong>Orange Max it</strong>. 3. Cliquez sur <em>Valider l'encaissement</em>.</span>
+            <span>1. Repérez l'opérateur (Orange Money, Moov Money ou Wave) et le montant. 2. Contrôlez la réception des fonds (Orange Max it, SMS Moov, App Wave). 3. Cliquez sur <em>Valider l'encaissement</em>.</span>
           </div>
         </div>
 
@@ -227,16 +240,21 @@ onUnmounted(() => {
             class="order-card caisse-card"
           >
             <div class="card-top">
-              <span class="table-tag">TABLE N°{{ order.tableNumber }}</span>
+              <div class="table-and-op">
+                <span class="table-tag">TABLE N°{{ order.tableNumber }}</span>
+                <span class="op-badge" :class="order.modePaiement || order.mode_paiement || 'orange_money'">
+                  {{ getOpBadgeText(order.modePaiement || order.mode_paiement) }}
+                </span>
+              </div>
               <span class="timer-tag" :class="{ danger: getTimeLeft(order.expiresAt) < '03:00' }">
-                ⏳ Restant: {{ getTimeLeft(order.expiresAt) }}
+                ⏳ {{ getTimeLeft(order.expiresAt) }}
               </span>
             </div>
 
             <div class="client-box">
               <h3 class="client-name">{{ order.customerName }}</h3>
               <p class="client-phone">
-                📞 Orange Money: <strong>{{ order.numeroClient || order.customerPhone || 'Non renseigné' }}</strong>
+                📞 {{ getOpLabel(order.modePaiement || order.mode_paiement) }}: <strong>{{ order.numeroClient || order.customerPhone || 'Non renseigné' }}</strong>
               </p>
               <span class="order-id">#{{ order.id }}</span>
             </div>
@@ -492,6 +510,12 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.table-and-op {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .table-tag {
   background-color: #d4af37;
   color: #000;
@@ -500,6 +524,34 @@ onUnmounted(() => {
   border-radius: 4px;
   font-size: 0.85rem;
   letter-spacing: 0.5px;
+}
+
+.op-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.25rem 0.55rem;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.op-badge.orange_money {
+  background: rgba(255, 121, 0, 0.15);
+  color: #ff7900;
+  border: 1px solid rgba(255, 121, 0, 0.4);
+}
+
+.op-badge.moov_money {
+  background: rgba(0, 102, 179, 0.18);
+  color: #3399ff;
+  border: 1px solid rgba(0, 102, 179, 0.4);
+}
+
+.op-badge.wave {
+  background: rgba(29, 195, 244, 0.18);
+  color: #1dc3f4;
+  border: 1px solid rgba(29, 195, 244, 0.4);
 }
 
 .big-table {

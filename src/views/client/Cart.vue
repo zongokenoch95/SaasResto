@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '@/stores/cartStore'
@@ -32,9 +32,41 @@ const specialNotes = computed({
   set: (val) => { cartStore.specialNotes = val }
 })
 
+const paymentMethod = computed({
+  get: () => cartStore.paymentMethod || 'orange_money',
+  set: (val) => { cartStore.paymentMethod = val }
+})
+
+const operatorInfo = {
+  orange_money: {
+    name: 'Orange Money',
+    icon: '🟠',
+    label: 'Numéro de téléphone Orange Money *',
+    hint: 'Numéro utilisé pour le paiement USSD Orange Money (*144*4*6*...#)',
+    placeholder: 'Ex: 70 12 34 56',
+    colorClass: 'btn-orange'
+  },
+  moov_money: {
+    name: 'Moov Money',
+    icon: '🔵',
+    label: 'Numéro de téléphone Moov Money *',
+    hint: 'Numéro utilisé pour le paiement USSD Moov Money (*555*4*1*...#)',
+    placeholder: 'Ex: 60 12 34 56',
+    colorClass: 'btn-moov'
+  },
+  wave: {
+    name: 'Wave',
+    icon: '🌊',
+    label: 'Numéro de téléphone Wave *',
+    hint: 'Numéro associé à votre compte Wave pour le virement direct sans frais',
+    placeholder: 'Ex: 77 12 34 56',
+    colorClass: 'btn-wave'
+  }
+}
+
 const handleCheckout = async () => {
   if (!customerName.value.trim() || !tableNumber.value || !customerPhone.value.trim()) {
-    errorMessage.value = 'Veuillez renseigner votre nom, votre numéro de table et votre numéro Orange Money.'
+    errorMessage.value = `Veuillez renseigner votre nom, votre numéro de table et votre numéro ${operatorInfo[paymentMethod.value].name}.`
     return
   }
 
@@ -47,6 +79,8 @@ const handleCheckout = async () => {
       customerPhone: customerPhone.value.trim(),
       tableNumber: Number(tableNumber.value),
       specialNotes: specialNotes.value.trim(),
+      modePaiement: paymentMethod.value,
+      mode_paiement: paymentMethod.value,
       items: cartStore.items,
       montantTotal: cartStore.totalPrice
     }
@@ -90,11 +124,51 @@ const handleCheckout = async () => {
           />
         </div>
 
-        <!-- Formulaire de commande & Paiement Orange Money -->
+        <!-- Formulaire de commande & Sélection du mode de paiement -->
         <form @submit.prevent="handleCheckout" class="checkout-form">
-          <div class="form-header-badge">
-            <span class="om-logo">🟠 Orange Money</span>
-            <span class="om-tag">Paiement direct sans agrégateur</span>
+          <!-- Sélecteur d'opérateur Mobile Money -->
+          <div class="payment-choice-box">
+            <span class="choice-title">Choisissez votre moyen de paiement Mobile Money :</span>
+            <div class="operator-cards">
+              <button 
+                type="button" 
+                class="operator-card" 
+                :class="{ active: paymentMethod === 'orange_money', 'card-orange': paymentMethod === 'orange_money' }"
+                @click="paymentMethod = 'orange_money'"
+              >
+                <span class="op-icon">🟠</span>
+                <div class="op-info">
+                  <span class="op-name">Orange Money</span>
+                  <span class="op-sub">USSD *144#</span>
+                </div>
+              </button>
+
+              <button 
+                type="button" 
+                class="operator-card" 
+                :class="{ active: paymentMethod === 'moov_money', 'card-moov': paymentMethod === 'moov_money' }"
+                @click="paymentMethod = 'moov_money'"
+              >
+                <span class="op-icon">🔵</span>
+                <div class="op-info">
+                  <span class="op-name">Moov Money</span>
+                  <span class="op-sub">USSD *555#</span>
+                </div>
+              </button>
+
+              <button 
+                type="button" 
+                class="operator-card" 
+                :class="{ active: paymentMethod === 'wave', 'card-wave': paymentMethod === 'wave' }"
+                @click="paymentMethod = 'wave'"
+              >
+                <span class="op-icon">🌊</span>
+                <div class="op-info">
+                  <span class="op-name">Wave</span>
+                  <span class="op-sub">Transfert & QR</span>
+                </div>
+              </button>
+            </div>
           </div>
 
           <div v-if="errorMessage" class="error-banner">
@@ -129,17 +203,18 @@ const handleCheckout = async () => {
             </div>
           </div>
 
+          <!-- Champ téléphone dynamique selon opérateur -->
           <div class="form-group">
-            <label for="customerPhone">Numéro de téléphone Orange Money *</label>
+            <label for="customerPhone">{{ operatorInfo[paymentMethod].label }}</label>
             <input 
               id="customerPhone" 
               v-model="customerPhone" 
               type="tel" 
-              placeholder="Ex: 70 12 34 56" 
+              :placeholder="operatorInfo[paymentMethod].placeholder" 
               autocomplete="tel"
               required 
             />
-            <span class="input-hint">Numéro utilisé pour le paiement USSD Orange Money (*144*4*6*...#)</span>
+            <span class="input-hint">{{ operatorInfo[paymentMethod].hint }}</span>
           </div>
 
           <div class="form-group">
@@ -161,9 +236,10 @@ const handleCheckout = async () => {
             <button 
               type="submit" 
               class="btn-submit" 
+              :class="operatorInfo[paymentMethod].colorClass"
               :disabled="orderStore.isLoading"
             >
-              {{ orderStore.isLoading ? 'Enregistrement...' : 'Passer au paiement (Orange Money) →' }}
+              {{ orderStore.isLoading ? 'Enregistrement...' : `Payer avec ${operatorInfo[paymentMethod].name} →` }}
             </button>
           </div>
         </form>
@@ -182,19 +258,15 @@ const handleCheckout = async () => {
   background-color: #0d0d0d;
   color: #fff;
   min-height: 100vh;
-  padding: 3rem 1rem;
-}
-
-.container {
-  max-width: 800px;
-  margin: 0 auto;
+  padding: 3rem 0;
+  font-family: 'Inter', sans-serif;
 }
 
 .page-title {
-  color: #d4af37;
   font-family: 'Playfair Display', serif;
-  font-size: 2.2rem;
-  margin-bottom: 0.2rem;
+  font-size: 2.4rem;
+  color: #d4af37;
+  margin-bottom: 0.5rem;
 }
 
 .page-subtitle {
@@ -202,130 +274,197 @@ const handleCheckout = async () => {
   margin-bottom: 2rem;
 }
 
+.empty-cart {
+  text-align: center;
+  padding: 4rem 1rem;
+  background: #141414;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.empty-cart p {
+  color: #aaa;
+  margin-bottom: 1.5rem;
+  font-size: 1.1rem;
+}
+
 .add-more-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
+  display: inline-block;
   color: #d4af37;
   text-decoration: none;
   font-weight: 500;
   margin-bottom: 1.5rem;
-  font-size: 0.95rem;
-  transition: opacity 0.2s;
+  transition: color 0.2s;
 }
 
 .add-more-link:hover {
-  opacity: 0.8;
+  color: #ffd700;
+  text-decoration: underline;
 }
 
-.empty-cart {
-  text-align: center;
-  padding: 4rem 1rem;
-}
-
-.btn-gold {
-  display: inline-block;
-  background-color: #d4af37;
-  color: #000;
-  padding: 0.8rem 1.5rem;
-  border-radius: 4px;
-  text-decoration: none;
-  font-weight: bold;
-  margin-top: 1rem;
+.items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2.5rem;
 }
 
 .checkout-form {
   background: #141414;
-  padding: 1.8rem;
-  border-radius: 10px;
-  border: 1px solid #282828;
-  margin-top: 2rem;
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  border-radius: 8px;
+  padding: 2rem;
 }
 
-.form-header-badge {
+/* Sélecteur d'opérateur Mobile Money */
+.payment-choice-box {
+  margin-bottom: 1.8rem;
+}
+
+.choice-title {
+  display: block;
+  font-size: 0.92rem;
+  color: #bbb;
+  margin-bottom: 0.8rem;
+  font-weight: 500;
+}
+
+.operator-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.operator-card {
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px 10px;
+  color: #ccc;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  background-color: #1a150c;
-  border: 1px solid rgba(255, 102, 0, 0.3);
-  padding: 0.6rem 1rem;
-  border-radius: 6px;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.operator-card:hover {
+  background: #222;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.operator-card .op-icon {
+  font-size: 1.4rem;
+}
+
+.operator-card .op-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.operator-card .op-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.operator-card .op-sub {
+  font-size: 0.72rem;
+  color: #777;
+}
+
+.operator-card.active.card-orange {
+  background: rgba(255, 121, 0, 0.12);
+  border-color: #ff7900;
+  box-shadow: 0 0 10px rgba(255, 121, 0, 0.25);
+}
+.operator-card.active.card-orange .op-name {
+  color: #ff7900;
+}
+
+.operator-card.active.card-moov {
+  background: rgba(0, 102, 179, 0.15);
+  border-color: #0066b3;
+  box-shadow: 0 0 10px rgba(0, 102, 179, 0.25);
+}
+.operator-card.active.card-moov .op-name {
+  color: #3399ff;
+}
+
+.operator-card.active.card-wave {
+  background: rgba(29, 195, 244, 0.15);
+  border-color: #1dc3f4;
+  box-shadow: 0 0 10px rgba(29, 195, 244, 0.25);
+}
+.operator-card.active.card-wave .op-name {
+  color: #1dc3f4;
+}
+
+.error-banner {
+  background: rgba(231, 76, 60, 0.15);
+  border-left: 4px solid #e74c3c;
+  color: #ff8888;
+  padding: 0.75rem 1rem;
   margin-bottom: 1.5rem;
-}
-
-.om-logo {
-  color: #ff6600;
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
-.om-tag {
-  color: #d4af37;
-  font-size: 0.75rem;
-  letter-spacing: 0.5px;
+  border-radius: 4px;
 }
 
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 1.5rem;
 }
 
 .form-group {
-  margin-bottom: 1.2rem;
+  margin-bottom: 1.5rem;
   display: flex;
   flex-direction: column;
+  gap: 0.4rem;
 }
 
 .form-group label {
   font-size: 0.85rem;
   color: #ccc;
-  margin-bottom: 0.4rem;
   font-weight: 500;
 }
 
-.form-group input, .form-group textarea {
-  background: #1f1f1f;
-  border: 1px solid #333;
+.form-group input,
+.form-group textarea {
+  background: #0d0d0d;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   color: #fff;
-  padding: 0.8rem;
+  padding: 0.75rem 1rem;
   border-radius: 4px;
   font-size: 0.95rem;
   transition: border-color 0.2s;
 }
 
-.form-group input:focus, .form-group textarea:focus {
+.form-group input:focus,
+.form-group textarea:focus {
   outline: none;
   border-color: #d4af37;
 }
 
 .input-hint {
   font-size: 0.75rem;
-  color: #888;
-  margin-top: 0.3rem;
-}
-
-.error-banner {
-  background-color: #5a1a1a;
-  color: #ff8888;
-  padding: 0.75rem;
-  border-radius: 4px;
-  margin-bottom: 1rem;
-  font-size: 0.9rem;
+  color: #777;
 }
 
 .cart-summary {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  margin-top: 2rem;
-  padding-top: 1.2rem;
-  border-top: 1px solid #252525;
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 1.5rem;
+  margin-top: 1rem;
 }
 
 .total-label {
-  font-size: 0.85rem;
-  color: #aaa;
+  font-size: 0.9rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .total-amount {
@@ -335,7 +474,6 @@ const handleCheckout = async () => {
 }
 
 .btn-submit {
-  background-color: #ff6600;
   color: #fff;
   border: none;
   padding: 0.95rem 1.8rem;
@@ -343,11 +481,30 @@ const handleCheckout = async () => {
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.95rem;
-  transition: background-color 0.2s, transform 0.1s;
+  transition: all 0.2s;
 }
 
-.btn-submit:hover:not(:disabled) {
+.btn-submit.btn-orange {
+  background-color: #ff6600;
+}
+.btn-submit.btn-orange:hover:not(:disabled) {
   background-color: #e65c00;
+  transform: translateY(-1px);
+}
+
+.btn-submit.btn-moov {
+  background-color: #0066b3;
+}
+.btn-submit.btn-moov:hover:not(:disabled) {
+  background-color: #00508f;
+  transform: translateY(-1px);
+}
+
+.btn-submit.btn-wave {
+  background-color: #0099cc;
+}
+.btn-submit.btn-wave:hover:not(:disabled) {
+  background-color: #0088b8;
   transform: translateY(-1px);
 }
 
@@ -360,7 +517,10 @@ const handleCheckout = async () => {
   margin-top: 5rem;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 650px) {
+  .operator-cards {
+    grid-template-columns: 1fr;
+  }
   .form-row {
     grid-template-columns: 1fr;
   }
