@@ -1,5 +1,45 @@
-﻿// Centralisation des appels API REST pour RestoPremium
+// Centralisation des appels API REST pour RestoPremium
 
+function getAuthHeaders() {
+  const token = localStorage.getItem('resto_token');
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+// ------------------------------------------------------------------
+// Authentification Personnel Restaurant
+// ------------------------------------------------------------------
+export function loginRestaurant(pin) {
+  return fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin })
+  }).then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Code PIN incorrect");
+    return data;
+  });
+}
+
+export function getAuthMe() {
+  return fetch('/api/auth/me', {
+    headers: { ...getAuthHeaders() }
+  }).then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Non authentifié");
+    return data;
+  });
+}
+
+export function logoutRestaurant() {
+  return fetch('/api/auth/logout', {
+    method: 'POST',
+    headers: { ...getAuthHeaders() }
+  }).then(r => r.json());
+}
+
+// ------------------------------------------------------------------
+// Catalogue Produits (Public)
+// ------------------------------------------------------------------
 export function getProducts() {
   return fetch('/api/products').then(r => r.json());
 }
@@ -8,7 +48,9 @@ export function getProductById(id) {
   return fetch(`/api/products/${id}`).then(r => r.json());
 }
 
-// 1. Client : Création de la commande avec réservation de stock
+// ------------------------------------------------------------------
+// Client : Module Commande & Paiement (Public)
+// ------------------------------------------------------------------
 export function createCommande(orderData) {
   return fetch('/api/commandes', {
     method: 'POST',
@@ -24,7 +66,6 @@ export function createCommande(orderData) {
 // Alias de rétrocompatibilité
 export const createOrder = createCommande;
 
-// 2. Client : Polling statut (toutes les 3 secondes)
 export function getCommandeStatut(orderId) {
   return fetch(`/api/commandes/${orderId}/statut`).then(async r => {
     const data = await r.json();
@@ -33,7 +74,6 @@ export function getCommandeStatut(orderId) {
   });
 }
 
-// 3. Client : Annulation avant paiement
 export function cancelCommandeClient(orderId) {
   return fetch(`/api/commandes/${orderId}/annuler-client`, {
     method: 'POST'
@@ -44,15 +84,23 @@ export function cancelCommandeClient(orderId) {
   });
 }
 
-// 4. Caisse : Commandes en attente d'encaissement
+// ------------------------------------------------------------------
+// Caisse : Gestion des encaissements (Protégé: Caisse, Admin)
+// ------------------------------------------------------------------
 export function getCaisseCommandesEnAttente() {
-  return fetch('/api/caisse/commandes/en-attente').then(r => r.json());
+  return fetch('/api/caisse/commandes/en-attente', {
+    headers: { ...getAuthHeaders() }
+  }).then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Erreur de chargement caisse");
+    return data;
+  });
 }
 
-// 5. Caisse : Validation de l'encaissement (après Max it)
 export function validerEncaissement(orderId) {
   return fetch(`/api/caisse/commandes/${orderId}/valider`, {
-    method: 'POST'
+    method: 'POST',
+    headers: { ...getAuthHeaders() }
   }).then(async r => {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || "Erreur lors de la validation");
@@ -60,15 +108,23 @@ export function validerEncaissement(orderId) {
   });
 }
 
-// 6. Cuisine : Commandes payées en cours de préparation (KDS)
+// ------------------------------------------------------------------
+// Cuisine : KDS - Kitchen Display System (Protégé: Cuisine, Caisse, Admin)
+// ------------------------------------------------------------------
 export function getCuisineCommandesActives() {
-  return fetch('/api/cuisine/commandes-actives').then(r => r.json());
+  return fetch('/api/cuisine/commandes-actives', {
+    headers: { ...getAuthHeaders() }
+  }).then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Erreur de chargement cuisine");
+    return data;
+  });
 }
 
-// 7. Cuisine : Finalisation de la commande (Prête à servir)
 export function terminerCommandeCuisine(orderId) {
   return fetch(`/api/cuisine/commandes/${orderId}/terminer`, {
-    method: 'POST'
+    method: 'POST',
+    headers: { ...getAuthHeaders() }
   }).then(async r => {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || "Erreur lors de la finalisation");

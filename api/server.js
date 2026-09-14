@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import cors from 'cors';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +16,55 @@ app.use(express.json());
 
 const productsFilePath = path.join(__dirname, 'products.json');
 const ordersFilePath = path.join(__dirname, 'orders.json');
+
+// ==========================================
+// CONFIGURATION AUTHENTIFICATION & SESSIONS
+// ==========================================
+const STAFF_ACCOUNTS = [
+  { id: 'caisse-01', pin: '1234', role: 'caisse', name: 'Caisse Principale' },
+  { id: 'cuisine-01', pin: '5678', role: 'cuisine', name: 'Chef de Cuisine' },
+  { id: 'admin-01', pin: '0000', role: 'admin', name: 'Gérant du Restaurant' }
+];
+
+// Sessions actives en mémoire : token -> { id, role, name, expiresAt }
+const activeSessions = new Map();
+
+// Nettoyage périodique des sessions expirées (durée de validité : 12 heures)
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+function cleanExpiredSessions() {
+  const now = Date.now();
+  for (const [token, session] of activeSessions.entries()) {
+    if (session.expiresAt && now > session.expiresAt) {
+      activeSessions.delete(token);
+    }
+  }
+}
+
+// Middleware de vérification d'authentification
+function requireAuth(allowedRoles = []) {
+  return (req, res, next) => {
+    cleanExpiredSessions();
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Accès non autorisé : Token manquant' });
+    }
+
+    const token = authHeader.slice(7).trim();
+    const session = activeSessions.get(token);
+
+    if (!session) {
+      return res.status(401).json({ error: 'Session expirée ou invalide. Veuillez vous reconnecter.' });
+    }
+
+    if (allowedRoles.length > 0 && !allowedRoles.includes(session.role) && session.role !== 'admin') {
+      return res.status(403).json({ error: `Rôle insuffisant (${session.role}). Action réservée aux rôles : ${allowedRoles.join(', ')}` });
+    }
+
+    req.user = session;
+    next();
+  };
+}
 
 // Fonctions utilitaires d'accès aux fichiers
 function readJson(file) {
@@ -233,11 +283,73 @@ app.post('/api/commandes/:id/annuler-client', (req, res) => {
 });
 
 // ==========================================
-// 3. DASHBOARD CAISSE (RESTAURANT)
+// 3. AUTHENTIFICATION DU PERSONNEL (RESTAURANT)
 // ==========================================
 
-// GET /api/caisse/commandes/en-attente : Liste des commandes en attente d'encaissement
-app.get('/api/caisse/commandes/en-attente', (req, res) => {
+// POST /api/auth/login : Connexion avec code PIN
+app.post('/api/auth/login', (req, res) => {
+  const { pin } = req.body;
+  if (!pin) {
+    return res.status(400).json({ error: "Code PIN requis" });
+  }
+
+  const account = STAFF_ACCOUNTS.find(a => a.pin === String(pin).trim());
+  if (!account) {
+    return res.status(401).json({ error: "Code PIN incorrect" });
+  }
+
+  // Génération d'un token sécurisé
+  const token = `resto_${crypto.randomBytes(24).toString('hex')}`;
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+
+  const sessionData = {
+    id: account.id,
+    role: account.role,
+    name: account.name,
+    expiresAt
+  };
+
+  activeSessions.set(token, sessionData);
+
+  res.json({
+    success: true,
+    token,
+    user: {
+      id: account.id,
+      role: account.role,
+      name: account.name
+    }
+  });
+});
+
+// GET /api/auth/me : Vérification du token actif
+app.get('/api/auth/me', requireAuth(), (req, res) => {
+  res.json({
+    success: true,
+    user: {
+      id: req.user.id,
+      role: req.user.role,
+      name: req.user.name
+    }
+  });
+});
+
+// POST /api/auth/logout : Déconnexion
+app.post('/api/auth/logout', (req, res) => {
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7).trim();
+    activeSessions.delete(token);
+  }
+  res.json({ success: true, message: "Déconnexion réussie" });
+});
+
+// ==========================================
+// 4. DASHBOARD CAISSE (RESTAURANT)
+// ==========================================
+
+// GET /api/caisse/commandes/en-attente : Liste des commandes en attente d'encaissement (Protégé: caisse, admin)
+app.get('/api/caisse/commandes/en-attente', requireAuth(['caisse', 'admin']), (req, res) => {
   const products = readJson(productsFilePath);
   const orders = readJson(ordersFilePath);
 
@@ -247,8 +359,8 @@ app.get('/api/caisse/commandes/en-attente', (req, res) => {
   res.json(pending);
 });
 
-// POST /api/caisse/commandes/:id/valider : Validation manuelle de l'encaissement (après Max it)
-app.post('/api/caisse/commandes/:id/valider', (req, res) => {
+// POST /api/caisse/commandes/:id/valider : Validation manuelle de l'encaissement (Protégé: caisse, admin)
+app.post('/api/caisse/commandes/:id/valider', requireAuth(['caisse', 'admin']), (req, res) => {
   const orderId = req.params.id;
   const products = readJson(productsFilePath);
   const orders = readJson(ordersFilePath);
@@ -274,18 +386,18 @@ app.post('/api/caisse/commandes/:id/valider', (req, res) => {
 });
 
 // ==========================================
-// 4. DASHBOARD CUISINE (KDS - KITCHEN DISPLAY)
+// 5. DASHBOARD CUISINE (KDS - KITCHEN DISPLAY)
 // ==========================================
 
-// GET /api/cuisine/commandes-actives : Commandes payées en cours de préparation
-app.get('/api/cuisine/commandes-actives', (req, res) => {
+// GET /api/cuisine/commandes-actives : Commandes payées en cours de préparation (Protégé: cuisine, caisse, admin)
+app.get('/api/cuisine/commandes-actives', requireAuth(['cuisine', 'caisse', 'admin']), (req, res) => {
   const orders = readJson(ordersFilePath);
   const activeOrders = orders.filter(o => o.statut === 'EN_PREPARATION' || o.statut === 'PAYEE');
   res.json(activeOrders);
 });
 
-// POST /api/cuisine/commandes/:id/terminer : Marquer la commande comme prête à servir
-app.post('/api/cuisine/commandes/:id/terminer', (req, res) => {
+// POST /api/cuisine/commandes/:id/terminer : Marquer la commande comme prête à servir (Protégé: cuisine, caisse, admin)
+app.post('/api/cuisine/commandes/:id/terminer', requireAuth(['cuisine', 'caisse', 'admin']), (req, res) => {
   const orderId = req.params.id;
   const orders = readJson(ordersFilePath);
 
