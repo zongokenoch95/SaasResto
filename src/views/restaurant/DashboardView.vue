@@ -1,14 +1,20 @@
-﻿<script setup>
+<script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { 
   getCaisseCommandesEnAttente, 
   validerEncaissement, 
   getCuisineCommandesActives, 
   terminerCommandeCuisine 
 } from '@/services/api'
+import { useAuthStore } from '@/stores/authStore'
 import Navbar from '@/components/Navbar.vue'
 
-const activeTab = ref('caisse') // 'caisse' ou 'cuisine'
+const router = useRouter()
+const authStore = useAuthStore()
+
+// Si le profil connecté est Cuisine, onglet Cuisine par défaut
+const activeTab = ref(authStore.role === 'cuisine' ? 'cuisine' : 'caisse')
 const caisseOrders = ref([])
 const cuisineOrders = ref([])
 const isProcessing = ref(false)
@@ -16,6 +22,12 @@ const soundEnabled = ref(true)
 
 let previousCaisseCount = 0
 let pollTimer = null
+
+// Déconnexion
+const handleLogout = async () => {
+  await authStore.logout()
+  router.push('/restaurant/login')
+}
 
 // Émission d'un son d'alerte Web Audio API lors d'une nouvelle commande caisse
 const playNotificationSound = () => {
@@ -55,13 +67,24 @@ const getTimeLeft = (expiresAt) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }
 
-// Rafraîchissement des données Caisse & Cuisine
+// Rafraîchissement des données selon le rôle de l'utilisateur
 const refreshData = async () => {
   try {
-    const [caisseData, cuisineData] = await Promise.all([
-      getCaisseCommandesEnAttente(),
-      getCuisineCommandesActives()
-    ])
+    const promises = []
+
+    if (authStore.isCaisse) {
+      promises.push(getCaisseCommandesEnAttente())
+    } else {
+      promises.push(Promise.resolve([]))
+    }
+
+    if (authStore.isCuisine) {
+      promises.push(getCuisineCommandesActives())
+    } else {
+      promises.push(Promise.resolve([]))
+    }
+
+    const [caisseData, cuisineData] = await Promise.all(promises)
 
     // Si une nouvelle commande en attente arrive, sonner l'alerte
     if (caisseData.length > previousCaisseCount && previousCaisseCount !== 0) {
@@ -73,6 +96,10 @@ const refreshData = async () => {
     cuisineOrders.value = cuisineData || []
   } catch (err) {
     console.error("Erreur polling dashboard:", err)
+    if (err.message && (err.message.includes('Token') || err.message.includes('Session') || err.message.includes('401'))) {
+      await authStore.logout()
+      router.push('/restaurant/login')
+    }
   }
 }
 
@@ -129,17 +156,30 @@ onUnmounted(() => {
         </div>
 
         <div class="header-controls">
+          <!-- Session utilisateur & Déconnexion -->
+          <div class="user-session-bar">
+            <span class="user-role-badge" :class="authStore.role">
+              <span class="role-icon">{{ authStore.role === 'caisse' ? '🟠' : authStore.role === 'cuisine' ? '👨‍🍳' : '👑' }}</span>
+              {{ authStore.userName }}
+            </span>
+            <button @click="handleLogout" class="btn-logout" title="Déconnexion du restaurant">
+              Quitter ⏻
+            </button>
+          </div>
+
           <button 
+            v-if="authStore.isCaisse"
             class="btn-audio-toggle" 
             :class="{ active: soundEnabled }"
             @click="soundEnabled = !soundEnabled"
           >
-            {{ soundEnabled ? '🔔 Alertes sonores activées' : '🔕 Alertes sonores coupées' }}
+            {{ soundEnabled ? '🔔 Alertes' : '🔕 Coupé' }}
           </button>
 
-          <!-- Onglets Caisse vs Cuisine -->
+          <!-- Onglets Caisse vs Cuisine (selon permissions) -->
           <div class="tabs-switcher">
             <button 
+              v-if="authStore.isCaisse"
               class="tab-btn" 
               :class="{ active: activeTab === 'caisse' }"
               @click="activeTab = 'caisse'"
@@ -151,6 +191,7 @@ onUnmounted(() => {
             </button>
 
             <button 
+              v-if="authStore.isCuisine"
               class="tab-btn" 
               :class="{ active: activeTab === 'cuisine' }"
               @click="activeTab = 'cuisine'"
@@ -636,6 +677,55 @@ onUnmounted(() => {
 
 .btn-terminer:hover:not(:disabled) {
   background: #27ae60;
+  color: #fff;
+}
+
+/* Styles Session Utilisateur & Déconnexion */
+.user-session-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #181818;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.user-role-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #eee;
+}
+
+.user-role-badge.caisse {
+  color: #ff9800;
+}
+
+.user-role-badge.cuisine {
+  color: #4caf50;
+}
+
+.user-role-badge.admin {
+  color: #d4af37;
+}
+
+.btn-logout {
+  background: rgba(230, 57, 70, 0.15);
+  border: 1px solid rgba(230, 57, 70, 0.3);
+  color: #ff6b6b;
+  font-size: 0.78rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.btn-logout:hover {
+  background: #e63946;
   color: #fff;
 }
 </style>
