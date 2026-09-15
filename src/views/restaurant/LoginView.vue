@@ -53,8 +53,12 @@ const submitPin = async (explicitPin = null) => {
 
   try {
     await authStore.login(pinToUse)
-    const redirectPath = route.query.redirect || '/restaurant'
-    router.push(redirectPath)
+    if (authStore.role === 'superadmin') {
+      router.push('/superadmin')
+    } else {
+      const redirectPath = route.query.redirect || '/restaurant'
+      router.push(redirectPath)
+    }
   } catch (err) {
     errorMessage.value = err.message || 'Code PIN incorrect'
     hasError.value = true
@@ -180,6 +184,10 @@ onUnmounted(() => {
           <button @click="quickLogin('0000')" class="badge-btn admin">
             <span>👑 Gérant</span>
             <small>PIN: 0000</small>
+          </button>
+          <button @click="quickLogin('9999')" class="badge-btn superadmin">
+            <span>🏢 SuperAdmin</span>
+            <small>PIN: 9999</small>
           </button>
         </div>
       </div>
@@ -431,6 +439,10 @@ onUnmounted(() => {
 
 .badge-btn.admin:hover small {
   color: #c5a059;
+}
+
+.badge-btn.superadmin:hover small {
+  color: #38ef7d;
 }
 
 /* Pied de page */

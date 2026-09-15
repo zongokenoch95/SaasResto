@@ -10,10 +10,12 @@ export const useAuthStore = defineStore('auth', {
   }),
   getters: {
     isAuthenticated: (state) => Boolean(state.token && state.user),
-    isCaisse: (state) => state.user?.role === 'caisse' || state.user?.role === 'admin',
-    isCuisine: (state) => state.user?.role === 'cuisine' || state.user?.role === 'caisse' || state.user?.role === 'admin',
+    isSuperAdmin: (state) => state.user?.role === 'superadmin',
+    isCaisse: (state) => state.user?.role === 'caisse' || state.user?.role === 'admin' || state.user?.role === 'superadmin',
+    isCuisine: (state) => state.user?.role === 'cuisine' || state.user?.role === 'caisse' || state.user?.role === 'admin' || state.user?.role === 'superadmin',
     role: (state) => state.user?.role || '',
-    userName: (state) => state.user?.name || ''
+    userName: (state) => state.user?.name || '',
+    restaurantId: (state) => state.user?.restaurantId || 'resto-premium-01'
   },
   actions: {
     _saveStorage() {
@@ -30,11 +32,11 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    async login(pin) {
+    async login(pin, restaurantId) {
       this.isLoading = true;
       this.error = null;
       try {
-        const data = await loginRestaurant(pin);
+        const data = await loginRestaurant(pin, restaurantId);
         this.token = data.token;
         this.user = data.user;
         this._saveStorage();

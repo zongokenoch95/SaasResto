@@ -45,10 +45,32 @@ export const all = (sql, params = []) => {
 export async function initDb() {
   await run('PRAGMA foreign_keys = ON');
 
-  // 1. Table Produits
+  // 1. Table Restaurants (Multi-Tenant)
+  await run(`
+    CREATE TABLE IF NOT EXISTS restaurants (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      phone TEXT,
+      address TEXT,
+      city TEXT DEFAULT 'Ouagadougou',
+      currency TEXT DEFAULT 'FCFA',
+      orange_merchant TEXT DEFAULT '654321',
+      moov_merchant TEXT DEFAULT '54321',
+      wave_merchant TEXT DEFAULT 'resto-premium',
+      wave_url TEXT DEFAULT 'https://pay.wave.com/m/resto-premium',
+      logo TEXT,
+      plan TEXT DEFAULT 'pro',
+      statut TEXT DEFAULT 'ACTIF',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // 2. Table Produits
   await run(`
     CREATE TABLE IF NOT EXISTS products (
-      id INTEGER PRIMARY KEY,
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      restaurant_id TEXT DEFAULT 'resto-premium-01',
       name TEXT NOT NULL,
       category TEXT NOT NULL,
       price INTEGER NOT NULL,
@@ -59,7 +81,12 @@ export async function initDb() {
     )
   `);
 
-  // 2. Table Commandes (avec mode de paiement Orange Money, Moov Money, Wave)
+  // Migration de restaurant_id sur products si la table existait déjà
+  try {
+    await run(`ALTER TABLE products ADD COLUMN restaurant_id TEXT DEFAULT 'resto-premium-01'`);
+  } catch (err) {}
+
+  // 3. Table Commandes (avec mode de paiement et restaurant_id)
   await run(`
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY,
@@ -80,14 +107,11 @@ export async function initDb() {
     )
   `);
 
-  // Migration automatique de la colonne mode_paiement si la table existait déjà
   try {
     await run(`ALTER TABLE orders ADD COLUMN mode_paiement TEXT DEFAULT 'orange_money'`);
-  } catch (err) {
-    // Colonne déjà existante
-  }
+  } catch (err) {}
 
-  // 3. Table Articles de Commande
+  // 4. Table Articles de Commande
   await run(`
     CREATE TABLE IF NOT EXISTS order_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,15 +126,65 @@ export async function initDb() {
     )
   `);
 
-  // 4. Table Personnel (Staff)
+  // 5. Table Personnel (Staff)
   await run(`
     CREATE TABLE IF NOT EXISTS staff_users (
       id TEXT PRIMARY KEY,
+      restaurant_id TEXT DEFAULT 'resto-premium-01',
       name TEXT NOT NULL,
       role TEXT NOT NULL,
       pin TEXT NOT NULL
     )
   `);
+
+  try {
+    await run(`ALTER TABLE staff_users ADD COLUMN restaurant_id TEXT DEFAULT 'resto-premium-01'`);
+  } catch (err) {}
+
+  // Seeding Restaurants si table vide
+  const restoCount = await get('SELECT COUNT(*) as count FROM restaurants');
+  if (restoCount.count === 0) {
+    await run(`
+      INSERT INTO restaurants (id, name, slug, phone, address, city, currency, orange_merchant, moov_merchant, wave_merchant, wave_url, logo, plan, statut)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      'resto-premium-01',
+      'RestoPremium Ouaga',
+      'resto-premium',
+      '+226 70 00 00 01',
+      'Avenue Kwame Nkrumah',
+      'Ouagadougou',
+      'FCFA',
+      '654321',
+      '54321',
+      'resto-premium',
+      'https://pay.wave.com/m/resto-premium',
+      '/assets/couverture.png',
+      'enterprise',
+      'ACTIF'
+    ]);
+
+    await run(`
+      INSERT INTO restaurants (id, name, slug, phone, address, city, currency, orange_merchant, moov_merchant, wave_merchant, wave_url, logo, plan, statut)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      'le-braise-02',
+      'Le Braisé Gourmet',
+      'le-braise',
+      '+226 76 00 00 02',
+      'Zone du Bois',
+      'Ouagadougou',
+      'FCFA',
+      '778899',
+      '99887',
+      'le-braise',
+      'https://pay.wave.com/m/le-braise',
+      '/assets/poulet.jpg',
+      'pro',
+      'ACTIF'
+    ]);
+    console.log('🏢 Seeding initial : 2 restaurants créés dans SQLite.');
+  }
 
   // Seeding Produits si table vide
   const productCount = await get('SELECT COUNT(*) as count FROM products');
@@ -119,8 +193,8 @@ export async function initDb() {
       const initialProducts = JSON.parse(fs.readFileSync(productsJsonPath, 'utf8') || '[]');
       for (const p of initialProducts) {
         await run(
-          `INSERT INTO products (id, name, category, price, description, image, stock)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO products (id, restaurant_id, name, category, price, description, image, stock)
+           VALUES (?, 'resto-premium-01', ?, ?, ?, ?, ?, ?)`,
           [p.id, p.name, p.category, p.price, p.description || '', p.image || '', Number(p.stock) || 25]
         );
       }
@@ -130,34 +204,180 @@ export async function initDb() {
     }
   }
 
+  // Seeding de produits exclusifs pour le restaurant 2 (Le Braisé Gourmet)
+  const braiseProdCount = await get("SELECT COUNT(*) as count FROM products WHERE restaurant_id = 'le-braise-02'");
+  if (braiseProdCount.count === 0) {
+    await run(
+      `INSERT INTO products (restaurant_id, name, category, price, description, image, stock) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['le-braise-02', 'Poulet Braisé Royal Gourmet', 'Plats', 6500, 'Poulet fermier mariné aux épices du chef et braisé au bois de savane.', '/assets/poulet.jpg', 20]
+    );
+    await run(
+      `INSERT INTO products (restaurant_id, name, category, price, description, image, stock) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['le-braise-02', 'Dibi d Agneau Grillé', 'Plats', 7000, 'Morceaux d agneau grillés et assaisonnés aux oignons moutarde.', '/assets/thieb.jpg', 15]
+    );
+    await run(
+      `INSERT INTO products (restaurant_id, name, category, price, description, image, stock) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['le-braise-02', 'Alloco Spécial Braisé', 'Accompagnements', 1500, 'Bananes plantains frites dorées avec sauce tomate pimentée.', '/assets/alloco.jpg', 30]
+    );
+  }
+
   // Seeding Utilisateurs Staff si table vide
   const staffCount = await get('SELECT COUNT(*) as count FROM staff_users');
   if (staffCount.count === 0) {
-    await run(`INSERT INTO staff_users (id, name, role, pin) VALUES ('caisse-01', 'Caisse Principale', 'caisse', '1234')`);
-    await run(`INSERT INTO staff_users (id, name, role, pin) VALUES ('cuisine-01', 'Chef de Cuisine', 'cuisine', '5678')`);
-    await run(`INSERT INTO staff_users (id, name, role, pin) VALUES ('admin-01', 'Gérant du Restaurant', 'admin', '0000')`);
+    await run(`INSERT INTO staff_users (id, restaurant_id, name, role, pin) VALUES ('caisse-01', 'resto-premium-01', 'Caisse Principale', 'caisse', '1234')`);
+    await run(`INSERT INTO staff_users (id, restaurant_id, name, role, pin) VALUES ('cuisine-01', 'resto-premium-01', 'Chef de Cuisine', 'cuisine', '5678')`);
+    await run(`INSERT INTO staff_users (id, restaurant_id, name, role, pin) VALUES ('admin-01', 'resto-premium-01', 'Gérant RestoPremium', 'admin', '0000')`);
     console.log(`👥 Seeding initial : 3 comptes staff créés dans SQLite.`);
+  }
+
+  // Compte SuperAdmin SaaS central
+  const superAdmin = await get("SELECT * FROM staff_users WHERE role = 'superadmin'");
+  if (!superAdmin) {
+    await run(`INSERT INTO staff_users (id, restaurant_id, name, role, pin) VALUES ('superadmin-01', '*', 'Super Administrateur SaaS', 'superadmin', '9999')`);
   }
 
   console.log('✅ Base de données SQLite connectée et prête.');
 }
 
 // ==========================================
+// MÉTIER : RESTAURANTS (MULTI-TENANT)
+// ==========================================
+export async function getAllRestaurants() {
+  const rows = await all('SELECT * FROM restaurants ORDER BY created_at DESC');
+  const enriched = [];
+  for (const r of rows) {
+    const stats = await get(`
+      SELECT COUNT(*) as orderCount, COALESCE(SUM(montant_total), 0) as totalVolume
+      FROM orders
+      WHERE restaurant_id = ? AND statut IN ('PAYEE', 'EN_PREPARATION', 'PRETE')
+    `, [r.id]);
+    enriched.push({
+      ...r,
+      orderCount: stats?.orderCount || 0,
+      totalVolume: stats?.totalVolume || 0
+    });
+  }
+  return enriched;
+}
+
+export async function getRestaurantByIdOrSlug(idOrSlug) {
+  if (!idOrSlug) return null;
+  return get(
+    'SELECT * FROM restaurants WHERE id = ? OR slug = ?',
+    [String(idOrSlug), String(idOrSlug)]
+  );
+}
+
+export async function createRestaurant(data) {
+  const id = data.id || `resto-${Date.now().toString(36)}`;
+  const slug = data.slug || data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const name = data.name;
+  if (!name) throw new Error('Le nom du restaurant est obligatoire');
+
+  const phone = data.phone || '';
+  const address = data.address || '';
+  const city = data.city || 'Ouagadougou';
+  const currency = data.currency || 'FCFA';
+  const orangeMerchant = data.orangeMerchant || data.orange_merchant || '654321';
+  const moovMerchant = data.moovMerchant || data.moov_merchant || '54321';
+  const waveMerchant = data.waveMerchant || data.wave_merchant || slug;
+  const waveUrl = data.waveUrl || data.wave_url || `https://pay.wave.com/m/${slug}`;
+  const plan = data.plan || 'pro';
+  const statut = data.statut || 'ACTIF';
+  const logo = data.logo || '/assets/couverture.png';
+
+  await run(`
+    INSERT INTO restaurants (id, name, slug, phone, address, city, currency, orange_merchant, moov_merchant, wave_merchant, wave_url, logo, plan, statut)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [id, name, slug, phone, address, city, currency, orangeMerchant, moovMerchant, waveMerchant, waveUrl, logo, plan, statut]);
+
+  // Compte caisse et cuisine par défaut pour ce restaurant
+  await run(
+    `INSERT INTO staff_users (id, restaurant_id, name, role, pin) VALUES (?, ?, ?, 'caisse', '1234')`,
+    [`caisse-${id}`, id, `Caisse ${name}`]
+  );
+  await run(
+    `INSERT INTO staff_users (id, restaurant_id, name, role, pin) VALUES (?, ?, ?, 'cuisine', '5678')`,
+    [`cuisine-${id}`, id, `Cuisine ${name}`]
+  );
+
+  return getRestaurantByIdOrSlug(id);
+}
+
+export async function updateRestaurant(id, data) {
+  const existing = await get('SELECT * FROM restaurants WHERE id = ?', [id]);
+  if (!existing) throw new Error('Restaurant non trouvé');
+
+  const name = data.name ?? existing.name;
+  const phone = data.phone ?? existing.phone;
+  const address = data.address ?? existing.address;
+  const city = data.city ?? existing.city;
+  const currency = data.currency ?? existing.currency;
+  const orangeMerchant = data.orangeMerchant ?? data.orange_merchant ?? existing.orange_merchant;
+  const moovMerchant = data.moovMerchant ?? data.moov_merchant ?? existing.moov_merchant;
+  const waveMerchant = data.waveMerchant ?? data.wave_merchant ?? existing.wave_merchant;
+  const waveUrl = data.waveUrl ?? data.wave_url ?? existing.wave_url;
+  const plan = data.plan ?? existing.plan;
+  const statut = data.statut ?? existing.statut;
+  const logo = data.logo ?? existing.logo;
+
+  await run(`
+    UPDATE restaurants 
+    SET name = ?, phone = ?, address = ?, city = ?, currency = ?, 
+        orange_merchant = ?, moov_merchant = ?, wave_merchant = ?, wave_url = ?, 
+        logo = ?, plan = ?, statut = ?
+    WHERE id = ?
+  `, [name, phone, address, city, currency, orangeMerchant, moovMerchant, waveMerchant, waveUrl, logo, plan, statut, id]);
+
+  return getRestaurantByIdOrSlug(id);
+}
+
+export async function getPlatformStats() {
+  const restoCount = await get("SELECT COUNT(*) as count FROM restaurants WHERE statut = 'ACTIF'");
+  const ordersStats = await get(`
+    SELECT COUNT(*) as totalOrders, COALESCE(SUM(montant_total), 0) as totalVolume
+    FROM orders
+    WHERE statut IN ('PAYEE', 'EN_PREPARATION', 'PRETE')
+  `);
+  const productsCount = await get("SELECT COUNT(*) as count FROM products");
+
+  return {
+    activeRestaurants: restoCount?.count || 0,
+    totalOrders: ordersStats?.totalOrders || 0,
+    totalVolumeFCFA: ordersStats?.totalVolume || 0,
+    totalProducts: productsCount?.count || 0
+  };
+}
+
+// ==========================================
 // MÉTIER : CATALOGUE PRODUITS
 // ==========================================
-export async function getAllProducts() {
-  return all('SELECT id, name, category, price, description, image, stock FROM products ORDER BY id ASC');
+export async function getAllProducts(restaurantId) {
+  if (restaurantId && restaurantId !== '*') {
+    return all(
+      'SELECT id, restaurant_id, name, category, price, description, image, stock FROM products WHERE restaurant_id = ? ORDER BY id ASC',
+      [restaurantId]
+    );
+  }
+  return all('SELECT id, restaurant_id, name, category, price, description, image, stock FROM products ORDER BY id ASC');
 }
 
 export async function getProductById(id) {
-  return get('SELECT id, name, category, price, description, image, stock FROM products WHERE id = ?', [id]);
+  return get('SELECT id, restaurant_id, name, category, price, description, image, stock FROM products WHERE id = ?', [id]);
 }
 
 // ==========================================
 // MÉTIER : AUTHENTIFICATION STAFF
 // ==========================================
-export async function getStaffByPin(pin) {
-  return get('SELECT id, name, role, pin FROM staff_users WHERE pin = ?', [String(pin).trim()]);
+export async function getStaffByPin(pin, restaurantId) {
+  const cleanPin = String(pin).trim();
+  if (restaurantId && restaurantId !== '*') {
+    return get(
+      `SELECT id, restaurant_id, name, role, pin FROM staff_users WHERE pin = ? AND (restaurant_id = ? OR restaurant_id = '*')`,
+      [cleanPin, restaurantId]
+    );
+  }
+  return get('SELECT id, restaurant_id, name, role, pin FROM staff_users WHERE pin = ?', [cleanPin]);
 }
 
 // ==========================================
@@ -385,13 +605,18 @@ export async function cancelOrderClient(orderId) {
   }
 }
 
-// Caisse : Commandes en attente d'encaissement
-export async function getPendingCaisseOrders() {
+// Caisse : Commandes en attente d'encaissement (filtrées optionnellement par restaurant)
+export async function getPendingCaisseOrders(restaurantId) {
   await checkAndExpireOrders();
-  const rows = await all(
-    `SELECT * FROM orders WHERE statut = 'EN_ATTENTE_DE_PAIEMENT' ORDER BY created_at DESC`
-  );
+  let query = `SELECT * FROM orders WHERE statut = 'EN_ATTENTE_DE_PAIEMENT'`;
+  const params = [];
+  if (restaurantId && restaurantId !== '*') {
+    query += ` AND restaurant_id = ?`;
+    params.push(restaurantId);
+  }
+  query += ` ORDER BY created_at DESC`;
 
+  const rows = await all(query, params);
   const results = [];
   for (const row of rows) {
     const items = await all('SELECT * FROM order_items WHERE order_id = ?', [row.id]);
@@ -419,12 +644,17 @@ export async function validateOrderCaisse(orderId) {
   return getOrderById(orderId);
 }
 
-// Cuisine : Commandes payées en cours de préparation (KDS)
-export async function getActiveCuisineOrders() {
-  const rows = await all(
-    `SELECT * FROM orders WHERE statut IN ('EN_PREPARATION', 'PAYEE') ORDER BY created_at ASC`
-  );
+// Cuisine : Commandes payées en cours de préparation (KDS, filtrées optionnellement par restaurant)
+export async function getActiveCuisineOrders(restaurantId) {
+  let query = `SELECT * FROM orders WHERE statut IN ('EN_PREPARATION', 'PAYEE')`;
+  const params = [];
+  if (restaurantId && restaurantId !== '*') {
+    query += ` AND restaurant_id = ?`;
+    params.push(restaurantId);
+  }
+  query += ` ORDER BY created_at ASC`;
 
+  const rows = await all(query, params);
   const results = [];
   for (const row of rows) {
     const items = await all('SELECT * FROM order_items WHERE order_id = ?', [row.id]);
@@ -470,6 +700,11 @@ export async function updateOrderPaymentMethod(orderId, modePaiement) {
 
 export default {
   initDb,
+  getAllRestaurants,
+  getRestaurantByIdOrSlug,
+  createRestaurant,
+  updateRestaurant,
+  getPlatformStats,
   getAllProducts,
   getProductById,
   getStaffByPin,
