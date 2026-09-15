@@ -8,11 +8,11 @@ function getAuthHeaders() {
 // ------------------------------------------------------------------
 // Authentification Personnel Restaurant
 // ------------------------------------------------------------------
-export function loginRestaurant(pin) {
+export function loginRestaurant(pin, restaurantId) {
   return fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin })
+    body: JSON.stringify({ pin, restaurantId })
   }).then(async r => {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || "Code PIN incorrect");
@@ -40,8 +40,9 @@ export function logoutRestaurant() {
 // ------------------------------------------------------------------
 // Catalogue Produits (Public)
 // ------------------------------------------------------------------
-export function getProducts() {
-  return fetch('/api/products').then(r => r.json());
+export function getProducts(restaurantId) {
+  const url = restaurantId ? `/api/products?restaurantId=${encodeURIComponent(restaurantId)}` : '/api/products';
+  return fetch(url).then(r => r.json());
 }
 
 export function getProductById(id) {
@@ -143,3 +144,59 @@ export function terminerCommandeCuisine(orderId) {
     return data;
   });
 }
+
+// ------------------------------------------------------------------
+// Gestion des Restaurants & SuperAdmin (Multi-Tenant)
+// ------------------------------------------------------------------
+export function getRestaurants() {
+  return fetch('/api/restaurants').then(r => r.json());
+}
+
+export function getRestaurantByIdOrSlug(idOrSlug) {
+  return fetch(`/api/restaurants/${idOrSlug}`).then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Restaurant non trouvé");
+    return data;
+  });
+}
+
+export function createRestaurant(restaurantData) {
+  return fetch('/api/restaurants', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    },
+    body: JSON.stringify(restaurantData)
+  }).then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Erreur création restaurant");
+    return data;
+  });
+}
+
+export function updateRestaurant(id, restaurantData) {
+  return fetch(`/api/restaurants/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    },
+    body: JSON.stringify(restaurantData)
+  }).then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Erreur modification restaurant");
+    return data;
+  });
+}
+
+export function getSuperAdminStats() {
+  return fetch('/api/superadmin/stats', {
+    headers: { ...getAuthHeaders() }
+  }).then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Erreur chargement statistiques");
+    return data;
+  });
+}
+

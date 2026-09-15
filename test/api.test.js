@@ -45,8 +45,11 @@ async function runTests() {
     const adminUser = await db.getStaffByPin('0000');
     assert(adminUser && adminUser.role === 'admin', 'Identification administrateur par PIN 0000');
 
-    const invalidUser = await db.getStaffByPin('9999');
-    assert(!invalidUser, 'Rejet d\'un code PIN inconnu (9999)');
+    const superAdminUser = await db.getStaffByPin('9999');
+    assert(superAdminUser && superAdminUser.role === 'superadmin', 'Identification SuperAdmin SaaS par PIN 9999');
+
+    const invalidUser = await db.getStaffByPin('8888');
+    assert(!invalidUser, 'Rejet d\'un code PIN inconnu (8888)');
 
     // 4. Création de commande & Réservation atomique du stock
     const testOrder = {
@@ -162,7 +165,29 @@ async function runTests() {
       'Notification temps réel reçue instantanément via WebSocket'
     );
 
-    // 10. Nettoyage et isolation des tests
+    // 10. Architecture Multi-Tenant (Multi-Restaurants) & SuperAdmin
+    const allRestaurants = await db.getAllRestaurants();
+    assert(allRestaurants.length >= 2, `Multi-Tenant : ${allRestaurants.length} restaurants enregistrés`);
+
+    const braiseProfile = await db.getRestaurantByIdOrSlug('le-braise');
+    assert(
+      braiseProfile && braiseProfile.orange_merchant === '778899' && braiseProfile.moov_merchant === '99887',
+      'Configuration marchande Mobile Money isolée par restaurant (Le Braisé)'
+    );
+
+    const braiseProducts = await db.getAllProducts('le-braise-02');
+    assert(
+      braiseProducts.length > 0 && braiseProducts.some(p => p.name.includes('Braisé Royal')),
+      'Isolation étanche du catalogue de produits par restaurant'
+    );
+
+    const platformStats = await db.getPlatformStats();
+    assert(
+      platformStats && platformStats.activeRestaurants >= 2,
+      'Calcul des statistiques globales consolidées de la plateforme SaaS'
+    );
+
+    // 11. Nettoyage et isolation des tests
     await db.run("DELETE FROM orders WHERE customer_name LIKE 'Client CI%'");
     await db.run("DELETE FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)");
     await db.run("UPDATE products SET stock = ? WHERE id = 1", [initialStock]);

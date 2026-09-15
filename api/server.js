@@ -126,7 +126,7 @@ function requireAuth(allowedRoles = []) {
       return res.status(401).json({ error: 'Session expirée ou invalide. Veuillez vous reconnecter.' });
     }
 
-    if (allowedRoles.length > 0 && !allowedRoles.includes(session.role) && session.role !== 'admin') {
+    if (allowedRoles.length > 0 && !allowedRoles.includes(session.role) && session.role !== 'admin' && session.role !== 'superadmin') {
       return res.status(403).json({ error: `Rôle insuffisant (${session.role}). Action réservée aux rôles : ${allowedRoles.join(', ')}` });
     }
 
@@ -136,13 +136,69 @@ function requireAuth(allowedRoles = []) {
 }
 
 // ==========================================
+// 0. GESTION DES RESTAURANTS (MULTI-TENANT) & SUPERADMIN
+// ==========================================
+
+// GET /api/restaurants : Liste de tous les restaurants
+app.get('/api/restaurants', async (req, res) => {
+  try {
+    const restaurants = await db.getAllRestaurants();
+    res.json(restaurants);
+  } catch (err) {
+    res.status(500).json({ error: "Erreur récupération restaurants: " + err.message });
+  }
+});
+
+// GET /api/restaurants/:idOrSlug : Fiche détaillée d'un restaurant
+app.get('/api/restaurants/:idOrSlug', async (req, res) => {
+  try {
+    const resto = await db.getRestaurantByIdOrSlug(req.params.idOrSlug);
+    if (!resto) return res.status(404).json({ error: "Restaurant non trouvé" });
+    res.json(resto);
+  } catch (err) {
+    res.status(500).json({ error: "Erreur lecture restaurant: " + err.message });
+  }
+});
+
+// POST /api/restaurants : Créer un nouvel établissement
+app.post('/api/restaurants', async (req, res) => {
+  try {
+    const newResto = await db.createRestaurant(req.body);
+    res.status(201).json(newResto);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// PATCH /api/restaurants/:id : Mettre à jour un établissement
+app.patch('/api/restaurants/:id', async (req, res) => {
+  try {
+    const updated = await db.updateRestaurant(req.params.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET /api/superadmin/stats : Statistiques consolidées plateforme SaaS
+app.get('/api/superadmin/stats', async (req, res) => {
+  try {
+    const stats = await db.getPlatformStats();
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: "Erreur statistiques plateforme: " + err.message });
+  }
+});
+
+// ==========================================
 // 1. CATALOGUE PRODUITS (SQLITE)
 // ==========================================
 
-// GET /api/products : Récupérer tous les produits (avec stock en temps réel)
+// GET /api/products : Récupérer les produits (filtrables par restaurant)
 app.get('/api/products', async (req, res) => {
   try {
-    const products = await db.getAllProducts();
+    const restaurantId = req.query.restaurantId || req.query.restaurant_id;
+    const products = await db.getAllProducts(restaurantId);
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: "Erreur récupération catalogue: " + err.message });
@@ -240,12 +296,12 @@ app.patch('/api/commandes/:id/mode-paiement', async (req, res) => {
 // POST /api/auth/login : Connexion avec code PIN (Requête sur staff_users)
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { pin } = req.body;
+    const { pin, restaurantId } = req.body;
     if (!pin) {
       return res.status(400).json({ error: "Code PIN requis" });
     }
 
-    const account = await db.getStaffByPin(pin);
+    const account = await db.getStaffByPin(pin, restaurantId);
     if (!account) {
       return res.status(401).json({ error: "Code PIN incorrect" });
     }
@@ -255,6 +311,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     const sessionData = {
       id: account.id,
+      restaurantId: account.restaurant_id,
       role: account.role,
       name: account.name,
       expiresAt
@@ -267,6 +324,7 @@ app.post('/api/auth/login', async (req, res) => {
       token,
       user: {
         id: account.id,
+        restaurantId: account.restaurant_id,
         role: account.role,
         name: account.name
       }
@@ -282,6 +340,7 @@ app.get('/api/auth/me', requireAuth(), (req, res) => {
     success: true,
     user: {
       id: req.user.id,
+      restaurantId: req.user.restaurantId,
       role: req.user.role,
       name: req.user.name
     }
@@ -305,7 +364,8 @@ app.post('/api/auth/logout', (req, res) => {
 // GET /api/caisse/commandes/en-attente : Liste des commandes en attente d'encaissement (Protégé: caisse, admin)
 app.get('/api/caisse/commandes/en-attente', requireAuth(['caisse', 'admin']), async (req, res) => {
   try {
-    const pending = await db.getPendingCaisseOrders();
+    const restaurantId = req.query.restaurantId || req.user.restaurantId;
+    const pending = await db.getPendingCaisseOrders(restaurantId);
     res.json(pending);
   } catch (err) {
     res.status(500).json({ error: "Erreur caisse: " + err.message });
@@ -330,7 +390,8 @@ app.post('/api/caisse/commandes/:id/valider', requireAuth(['caisse', 'admin']), 
 // GET /api/cuisine/commandes-actives : Commandes payées en cours de préparation (Protégé: cuisine, caisse, admin)
 app.get('/api/cuisine/commandes-actives', requireAuth(['cuisine', 'caisse', 'admin']), async (req, res) => {
   try {
-    const activeOrders = await db.getActiveCuisineOrders();
+    const restaurantId = req.query.restaurantId || req.user.restaurantId;
+    const activeOrders = await db.getActiveCuisineOrders(restaurantId);
     res.json(activeOrders);
   } catch (err) {
     res.status(500).json({ error: "Erreur cuisine: " + err.message });

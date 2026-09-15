@@ -88,18 +88,21 @@ L'accès à l'espace restaurant ([`/restaurant`](http://localhost:5173/restauran
 
 | Profil | Code PIN | Rôle Système | Périmètre d'Accès |
 | :--- | :---: | :---: | :--- |
-| **Caisse Principale** | **`1234`** | `caisse` | Validation des encaissements Orange Money + Vue KDS Cuisine |
+| **Caisse Principale** | **`1234`** | `caisse` | Validation des encaissements Mobile Money + Vue KDS Cuisine |
 | **Chef de Cuisine** | **`5678`** | `cuisine` | Écran de préparation Cuisine KDS uniquement (Accès Caisse masqué) |
-| **Gérant / Administrateur** | **`0000`** | `admin` | Accès complet sans restriction à l'ensemble du système |
+| **Gérant / Administrateur** | **`0000`** | `admin` | Accès complet restaurant (Caisse + Cuisine + Menu) |
+| **SuperAdmin SaaS** | **`9999`** | `superadmin` | Supervision globale de la plateforme, gestion des restaurants & KPIs |
 
 Des boutons de raccourcis démo figurent directement sur l'écran de connexion pour faciliter les tests.
 
 ### Liens d'accès direct
 * 🏠 **Accueil Client :** [http://localhost:5173/](http://localhost:5173/)
 * 🍽️ **Carte & Filtrage :** [http://localhost:5173/menu](http://localhost:5173/menu)
+* 🏢 **Restaurant Démo 2 (Le Braisé) :** [http://localhost:5173/r/le-braise-02/menu](http://localhost:5173/r/le-braise-02/menu)
 * 🛒 **Panier & Prise de Commande :** [http://localhost:5173/cart](http://localhost:5173/cart)
 * 🔐 **Connexion Personnel :** [http://localhost:5173/restaurant/login](http://localhost:5173/restaurant/login)
 * 📊 **Dashboard Restaurant :** [http://localhost:5173/restaurant](http://localhost:5173/restaurant)
+* 🏢 **Console SuperAdmin SaaS :** [http://localhost:5173/superadmin](http://localhost:5173/superadmin)
 
 ---
 

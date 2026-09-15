@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useOrderStore } from '@/stores/orderStore'
-import { updateCommandePaymentMethod } from '@/services/api'
+import { updateCommandePaymentMethod, getRestaurantByIdOrSlug } from '@/services/api'
 import { getSocket, joinOrderRoom, leaveOrderRoom, isConnected as socketConnected } from '@/services/socket'
 import QRCode from 'qrcode'
 import Navbar from '@/components/Navbar.vue'
@@ -14,61 +14,70 @@ const orderStore = useOrderStore()
 
 const orderId = computed(() => route.params.id)
 const order = ref(null)
+const restaurantInfo = ref(null)
 const isLoading = ref(true)
 const isCancelling = ref(false)
 const qrCodeDataUrl = ref('')
 const copied = ref(false)
 
-// Configuration Multi-Opérateurs Mobile Money
-const OPERATOR_CONFIG = {
-  orange_money: {
-    id: 'orange_money',
-    name: 'Orange Money Burkina',
-    shortName: 'Orange Money',
-    icon: '🟠',
-    merchantCode: '654321',
-    themeClass: 'theme-orange',
-    accentColor: '#ff7900',
-    type: 'ussd',
-    getUssd: (amount) => `*144*4*6*654321*${amount}#`,
-    getTelUrl: (amount) => `tel:*144*4*6*654321*${amount}%23`,
-    step1: 'Composez le code marchand sécurisé',
-    step2: 'Saisissez votre code secret Orange Money pour valider'
-  },
-  moov_money: {
-    id: 'moov_money',
-    name: 'Moov Money Burkina',
-    shortName: 'Moov Money',
-    icon: '🔵',
-    merchantCode: '54321',
-    themeClass: 'theme-moov',
-    accentColor: '#0066b3',
-    type: 'ussd',
-    getUssd: (amount) => `*555*4*1*54321*${amount}#`,
-    getTelUrl: (amount) => `tel:*555*4*1*54321*${amount}%23`,
-    step1: 'Composez le code marchand Moov sécurisé',
-    step2: 'Saisissez votre code secret Moov Money pour confirmer'
-  },
-  wave: {
-    id: 'wave',
-    name: 'Wave Burkina',
-    shortName: 'Wave',
-    icon: '🌊',
-    merchantPhone: '+226 77 00 00 00',
-    themeClass: 'theme-wave',
-    accentColor: '#1dc3f4',
-    type: 'direct',
-    getUssd: (amount) => `Virement Wave vers RestoPremium (${amount} FCFA)`,
-    getTelUrl: (amount) => `https://wave.com/send?phone=22677000000&amount=${amount}`,
-    step1: 'Scannez le QR Code Wave avec votre application Wave',
-    step2: 'Confirmez le transfert vers RestoPremium'
+// Configuration Multi-Opérateurs Mobile Money dynamique (Multi-Tenant)
+const dynamicOperatorConfig = computed(() => {
+  const restoName = restaurantInfo.value?.name || 'RestoPremium'
+  const orangeCode = restaurantInfo.value?.orange_merchant || '654321'
+  const moovCode = restaurantInfo.value?.moov_merchant || '54321'
+  const waveId = restaurantInfo.value?.wave_merchant || 'resto-premium'
+  const waveDirectUrl = restaurantInfo.value?.wave_url || `https://pay.wave.com/m/${waveId}`
+
+  return {
+    orange_money: {
+      id: 'orange_money',
+      name: 'Orange Money Burkina',
+      shortName: 'Orange Money',
+      icon: '🟠',
+      merchantCode: orangeCode,
+      themeClass: 'theme-orange',
+      accentColor: '#ff7900',
+      type: 'ussd',
+      getUssd: (amount) => `*144*4*6*${orangeCode}*${amount}#`,
+      getTelUrl: (amount) => `tel:*144*4*6*${orangeCode}*${amount}%23`,
+      step1: `Composez le code marchand ${restoName}`,
+      step2: 'Saisissez votre code secret Orange Money pour valider'
+    },
+    moov_money: {
+      id: 'moov_money',
+      name: 'Moov Money Burkina',
+      shortName: 'Moov Money',
+      icon: '🔵',
+      merchantCode: moovCode,
+      themeClass: 'theme-moov',
+      accentColor: '#0066b3',
+      type: 'ussd',
+      getUssd: (amount) => `*555*4*1*${moovCode}*${amount}#`,
+      getTelUrl: (amount) => `tel:*555*4*1*${moovCode}*${amount}%23`,
+      step1: `Composez le code marchand Moov ${restoName}`,
+      step2: 'Saisissez votre code secret Moov Money pour confirmer'
+    },
+    wave: {
+      id: 'wave',
+      name: 'Wave Burkina',
+      shortName: 'Wave',
+      icon: '🌊',
+      merchantCode: waveId,
+      themeClass: 'theme-wave',
+      accentColor: '#1dc3f4',
+      type: 'direct',
+      getUssd: (amount) => `Virement Wave vers ${restoName} (${amount} FCFA)`,
+      getTelUrl: (amount) => `${waveDirectUrl}?amount=${amount}`,
+      step1: 'Scannez le QR Code Wave avec votre application Wave',
+      step2: `Confirmez le transfert sécurisé vers ${restoName}`
+    }
   }
-}
+})
 
 // Opérateur actuellement sélectionné
 const currentOperator = computed(() => {
   const method = order.value?.modePaiement || order.value?.mode_paiement || 'orange_money'
-  return OPERATOR_CONFIG[method] || OPERATOR_CONFIG.orange_money
+  return dynamicOperatorConfig.value[method] || dynamicOperatorConfig.value.orange_money
 })
 
 // Minuteur TTL (10 minutes)
@@ -236,6 +245,13 @@ onMounted(async () => {
   isLoading.value = false
 
   if (order.value) {
+    if (order.value.restaurantId || order.value.restaurant_id) {
+      try {
+        restaurantInfo.value = await getRestaurantByIdOrSlug(order.value.restaurantId || order.value.restaurant_id)
+      } catch (e) {
+        console.warn('Info restaurant non récupérée:', e)
+      }
+    }
     updateCountdown()
     await generateQrCode()
 

@@ -282,6 +282,9 @@ onUnmounted(() => {
         <div class="header-controls">
           <!-- Session utilisateur & Déconnexion -->
           <div class="user-session-bar">
+            <router-link v-if="authStore.isSuperAdmin" to="/superadmin" class="btn-superadmin-link" title="Espace SuperAdmin Multi-Tenant">
+              🏢 SuperAdmin
+            </router-link>
             <span class="user-role-badge" :class="authStore.role">
               <span class="role-icon">{{ authStore.role === 'caisse' ? '🟠' : authStore.role === 'cuisine' ? '👨‍🍳' : '👑' }}</span>
               {{ authStore.userName }}
@@ -889,6 +892,25 @@ onUnmounted(() => {
 
 .user-role-badge.admin {
   color: #d4af37;
+}
+
+.btn-superadmin-link {
+  background: rgba(212, 175, 55, 0.15);
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  color: #d4af37;
+  font-size: 0.78rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-superadmin-link:hover {
+  background: rgba(212, 175, 55, 0.35);
+  color: #fff;
 }
 
 .btn-logout {
