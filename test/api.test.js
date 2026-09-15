@@ -1,6 +1,6 @@
 import db from '../api/db.js';
 import { io as ClientIO } from 'socket.io-client';
-import { server, emitOrderValidated } from '../api/server.js';
+import { server, emitOrderValidated, parsePaymentNotification } from '../api/server.js';
 
 async function runTests() {
   console.log('🧪 Démarrage de la suite de tests automatisée (CI/CD)...\n');
@@ -18,6 +18,7 @@ async function runTests() {
   }
 
   let clientSocket = null;
+  const BASE_URL = 'http://localhost:3000';
 
   try {
     // 1. Initialisation de la base SQLite, purge et seeding propre
@@ -187,7 +188,106 @@ async function runTests() {
       'Calcul des statistiques globales consolidées de la plateforme SaaS'
     );
 
-    // 11. Nettoyage et isolation des tests
+    // 11. Passerelle Webhook & Validation Automatique des Paiements (Orange Money / MacroDroid Bridge)
+    const testSms = "Vous avez recu 3500 FCFA de +226 70 12 34 56. Trans ID: CI240915.1010. Nouveau solde: 55000 FCFA.";
+    const parsedSms = parsePaymentNotification(testSms);
+    assert(
+      parsedSms.amount === 3500 && parsedSms.senderPhone === '70123456' && parsedSms.transactionRef === 'CI240915.1010',
+      'Parsing lexical du SMS Orange Money (Montant, Expéditeur, Trans ID)'
+    );
+
+    // Rejet si secret webhook manquant ou invalide (Sécurité Anti-Fraude)
+    const unauthRes = await fetch(`${BASE_URL}/api/webhooks/orange-money-notification`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: testSms })
+    });
+    assert(
+      unauthRes.status === 401,
+      'Sécurité Webhook : Rejet immédiat (401) si le secret est absent ou invalide'
+    );
+
+    // Création d'une commande cible pour test de réconciliation
+    const webhookOrder = await db.createOrderTransaction({
+      restaurantId: 'resto-premium-01',
+      customerName: 'Client CI Webhook',
+      numeroClient: '70123456',
+      tableNumber: 8,
+      montantTotal: 3500,
+      items: [{ id: 1, name: 'Poulet braisé', quantity: 1, price: 3500 }]
+    });
+
+    // Envoi du webhook avec authentification valide
+    const webhookRes = await fetch(`${BASE_URL}/api/webhooks/orange-money/resto-premium-01`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-webhook-secret': 'resto_secret_2026'
+      },
+      body: JSON.stringify({ message: testSms })
+    });
+    const webhookData = await webhookRes.json();
+    assert(
+      webhookData.success === true && webhookData.matched === true && webhookData.orderId === webhookOrder.id,
+      'Réconciliation automatique réussie de la commande via Webhook MacroDroid'
+    );
+
+    const updatedWebhookOrder = await db.getOrderById(webhookOrder.id);
+    assert(
+      updatedWebhookOrder.statut === 'EN_PREPARATION' && updatedWebhookOrder.transactionRef === 'CI240915.1010',
+      'Mise à jour du statut en EN_PREPARATION avec enregistrement du Trans ID'
+    );
+
+    // Idempotence : Le même SMS renvoyé doit être détecté comme doublon sans erreur
+    const duplicateRes = await fetch(`${BASE_URL}/api/webhooks/orange-money/resto-premium-01`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-webhook-secret': 'resto_secret_2026'
+      },
+      body: JSON.stringify({ message: testSms })
+    });
+    const duplicateData = await duplicateRes.json();
+    assert(
+      duplicateData.success === true && duplicateData.duplicate === true,
+      'Idempotence garantie : détection et rejet d\'un SMS déjà traité'
+    );
+
+    // Isolation Multi-Tenant : un webhook pour le restaurant B ne valide pas une commande du restaurant A
+    const braiseOrder = await db.createOrderTransaction({
+      restaurantId: 'le-braise-02',
+      customerName: 'Client CI Braise',
+      numeroClient: '78000000',
+      tableNumber: 3,
+      montantTotal: 4500,
+      items: [{ id: 1, name: 'Poulet braisé', quantity: 1, price: 4500 }]
+    });
+
+    // Envoi vers le mauvais restaurant (resto-premium-01)
+    const crossTenantRes = await fetch(`${BASE_URL}/api/webhooks/orange-money/resto-premium-01`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': 'resto_secret_2026' },
+      body: JSON.stringify({ message: 'Vous avez recu 4500 FCFA de 78000000. Ref: OM-DIFF-01.' })
+    });
+    const crossTenantData = await crossTenantRes.json();
+    assert(
+      crossTenantData.matched === false,
+      'Isolation étanche : un webhook pour un restaurant ne valide pas les commandes d\'un autre établissement'
+    );
+
+    // Envoi vers le bon restaurant (le-braise-02)
+    const rightTenantRes = await fetch(`${BASE_URL}/api/webhooks/orange-money/le-braise-02`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': 'resto_secret_2026' },
+      body: JSON.stringify({ message: 'Vous avez recu 4500 FCFA de 78000000. Ref: OM-DIFF-01.' })
+    });
+    const rightTenantData = await rightTenantRes.json();
+    assert(
+      rightTenantData.matched === true && rightTenantData.orderId === braiseOrder.id,
+      'Routage tenant précis : validation automatique sur le bon établissement'
+    );
+
+    // 12. Nettoyage et isolation des tests
     await db.run("DELETE FROM orders WHERE customer_name LIKE 'Client CI%'");
     await db.run("DELETE FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)");
     await db.run("UPDATE products SET stock = ? WHERE id = 1", [initialStock]);
