@@ -99,6 +99,7 @@ export async function initDb() {
       montant_total INTEGER NOT NULL,
       mode_paiement TEXT DEFAULT 'orange_money',
       statut TEXT NOT NULL,
+      transaction_ref TEXT,
       created_at DATETIME NOT NULL,
       expires_at DATETIME NOT NULL,
       paid_at DATETIME,
@@ -109,6 +110,10 @@ export async function initDb() {
 
   try {
     await run(`ALTER TABLE orders ADD COLUMN mode_paiement TEXT DEFAULT 'orange_money'`);
+  } catch (err) {}
+
+  try {
+    await run(`ALTER TABLE orders ADD COLUMN transaction_ref TEXT`);
   } catch (err) {}
 
   // 4. Table Articles de Commande
@@ -415,6 +420,7 @@ function formatOrder(orderRow, items = []) {
     mode_paiement: orderRow.mode_paiement || 'orange_money',
     statut: orderRow.statut,
     status: orderRow.statut,
+    transactionRef: orderRow.transaction_ref || null,
     createdAt: orderRow.created_at,
     expiresAt: orderRow.expires_at,
     paidAt: orderRow.paid_at,
@@ -626,7 +632,7 @@ export async function getPendingCaisseOrders(restaurantId) {
 }
 
 // Caisse : Validation de l'encaissement Orange Money
-export async function validateOrderCaisse(orderId) {
+export async function validateOrderCaisse(orderId, transactionRef = null) {
   await checkAndExpireOrders();
   const orderRow = await get('SELECT * FROM orders WHERE id = ?', [orderId]);
   if (!orderRow) throw new Error('Commande non trouvée');
@@ -637,11 +643,103 @@ export async function validateOrderCaisse(orderId) {
 
   const now = new Date().toISOString();
   await run(
-    `UPDATE orders SET statut = 'EN_PREPARATION', paid_at = ? WHERE id = ?`,
-    [now, orderId]
+    `UPDATE orders SET statut = 'EN_PREPARATION', paid_at = ?, transaction_ref = COALESCE(?, transaction_ref) WHERE id = ?`,
+    [now, transactionRef, orderId]
   );
 
   return getOrderById(orderId);
+}
+
+// Réconciliation automatique via webhook mobile (Orange Money / MacroDroid)
+export async function reconcilePaymentWebhook({
+  restaurantId = 'resto-premium-01',
+  rawMessage = '',
+  senderPhone = null,
+  amount = null,
+  transactionRef = null
+}) {
+  // 1. Purge et expiration automatique des commandes dépassant les 10 minutes
+  await checkAndExpireOrders();
+
+  // 2. Idempotence : Si la référence de transaction a déjà été validée
+  if (transactionRef) {
+    const existing = await get('SELECT * FROM orders WHERE transaction_ref = ?', [transactionRef]);
+    if (existing) {
+      const items = await all('SELECT * FROM order_items WHERE order_id = ?', [existing.id]);
+      return {
+        success: true,
+        duplicate: true,
+        matched: true,
+        order: formatOrder(existing, items),
+        message: `Transaction ${transactionRef} déjà enregistrée pour la commande ${existing.id}`
+      };
+    }
+  }
+
+  // 3. Recherche des commandes éligibles (statut EN_ATTENTE_DE_PAIEMENT)
+  let query = `SELECT * FROM orders WHERE statut = 'EN_ATTENTE_DE_PAIEMENT'`;
+  const params = [];
+
+  if (restaurantId && restaurantId !== '*') {
+    query += ` AND restaurant_id = ?`;
+    params.push(restaurantId);
+  }
+
+  if (amount && Number(amount) > 0) {
+    query += ` AND montant_total = ?`;
+    params.push(Number(amount));
+  }
+
+  query += ` ORDER BY created_at ASC`;
+  const pendingOrders = await all(query, params);
+
+  if (!pendingOrders || pendingOrders.length === 0) {
+    return {
+      success: true,
+      duplicate: false,
+      matched: false,
+      order: null,
+      message: `Aucune commande en attente ne correspond au montant ${amount || 'non spécifié'} FCFA (Restaurant: ${restaurantId})`
+    };
+  }
+
+  // 4. Stratégie de matching : Priorité au numéro de téléphone de l'expéditeur
+  let chosenOrder = null;
+  let matchedBy = 'fifo';
+
+  if (senderPhone) {
+    const cleanPhone = String(senderPhone).replace(/\D/g, '').slice(-8);
+    chosenOrder = pendingOrders.find(o => {
+      const clientPhone = String(o.numero_client || o.customer_phone || '').replace(/\D/g, '').slice(-8);
+      return clientPhone && clientPhone === cleanPhone;
+    });
+    if (chosenOrder) {
+      matchedBy = 'phone_and_amount';
+    }
+  }
+
+  // Si pas de correspondance téléphonique directe, on sélectionne la commande la plus ancienne (FIFO)
+  if (!chosenOrder) {
+    chosenOrder = pendingOrders[0];
+    matchedBy = 'amount_fifo';
+  }
+
+  // 5. Validation atomique de la commande
+  const now = new Date().toISOString();
+  await run(
+    `UPDATE orders SET statut = 'EN_PREPARATION', paid_at = ?, transaction_ref = ? WHERE id = ?`,
+    [now, transactionRef || null, chosenOrder.id]
+  );
+
+  const updatedOrder = await getOrderById(chosenOrder.id);
+  return {
+    success: true,
+    duplicate: false,
+    matched: true,
+    matchedBy,
+    order: updatedOrder,
+    message: `Commande ${chosenOrder.id} validée automatiquement avec succès (${matchedBy})`
+  };
 }
 
 // Cuisine : Commandes payées en cours de préparation (KDS, filtrées optionnellement par restaurant)
@@ -715,6 +813,7 @@ export default {
   updateOrderPaymentMethod,
   getPendingCaisseOrders,
   validateOrderCaisse,
+  reconcilePaymentWebhook,
   getActiveCuisineOrders,
   finishOrderCuisine,
   run,

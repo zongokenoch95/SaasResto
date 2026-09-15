@@ -32,3 +32,69 @@ Faire évoluer le projet existant (auparavant limité à une simple confirmation
   - `POST /api/caisse/commandes/:id/valider` : Validation de l'encaissement.
   - `GET /api/cuisine/commandes-actives` : Commandes payées en cours de cuisson.
   - `POST /api/cuisine/commandes/:id/terminer` : Commande prête à servir.
+
+
+# Diagnostic & Implémentation : Validation Automatique des Paiements (Orange Money / MacroDroid Bridge)
+
+## 1. Statut de l'Implémentation
+✅ **Implémenté et testé (33/33 tests CI/CD validés)** sur la branche `feature/webhook-payment-bridge`.
+
+## 2. Endpoints Webhook Disponibles
+
+| Méthode | URL | Description | Sécurité |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/webhooks/orange-money/:restaurantId` | Validation multi-tenant (ex: `/resto-premium-01` ou `/le-braise-02`) | Header `x-webhook-secret: resto_secret_2026` |
+| `POST` | `/api/webhooks/orange-money-notification` | Route universelle (restaurant par défaut ou via paramètre) | Header `x-webhook-secret: resto_secret_2026` |
+
+---
+
+## 3. Configuration Exacte de MacroDroid (Smartphone Android Caisse)
+
+### A. Déclencheur (Trigger)
+1. **Ajouter un Déclencheur** ➔ **Messages** ➔ **SMS Reçu**.
+2. Sélectionner **N'importe quel contenu** (ou filtrer par contenu contenant `recu` ou `reçu`).
+3. Expéditeur : `OrangeMoney` ou `144` (ou `N'importe quel numéro` pour les tests).
+
+### B. Action (Action HTTP Request)
+1. **Ajouter une Action** ➔ **Connectivité** ➔ **Requête HTTP**.
+2. **Méthode :** `POST`
+3. **URL :**
+   - *Via Dev Tunnel VS Code :*  
+     `https://1czbbcwk-3000.uks1.devtunnels.ms/api/webhooks/orange-money/resto-premium-01`
+   - *En réseau local Wi-Fi direct (si sur le même réseau) :*  
+     `http://192.168.1.X:3000/api/webhooks/orange-money/resto-premium-01`
+4. **En-têtes HTTP (Headers) :**
+   - `Content-Type`: `application/json`
+   - `x-webhook-secret`: `resto_secret_2026`
+5. **Corps du contenu (Body / Text Content) :**
+   ```json
+   {
+     "message": "[sms_body]",
+     "sender": "[sms_number]"
+   }
+   ```
+   *(Dans MacroDroid, cliquez sur les trois petits points ou le bouton `[...]` pour insérer les tags magiques `[sms_body]` et `[sms_number]`)*.
+
+---
+
+## 4. Configuration Obligatoire du Tunnel VS Code (Point Bloquant Résolu)
+
+Si vous utilisez **VS Code Dev Tunnels** pour exposer le port 3000 vers Internet :
+1. Ouvrez l'onglet **Ports** dans VS Code (en bas à côté du Terminal).
+2. Repérez la ligne du port `3000`.
+3. Faites **Clic droit** sur la ligne ➔ **Port Visibility** (Visibilité du Port) ➔ Sélectionnez **Public**.
+> [!IMPORTANT]
+> Par défaut, VS Code règle les ports sur **Private**, ce qui bloque les requêtes de MacroDroid avec une erreur `401 Unauthorized` ou une redirection HTML vers Microsoft Login. Passer en **Public** permet à MacroDroid d'atteindre le serveur directement.
+
+---
+
+## 5. Test Manuel Rapide (Depuis Terminal ou Postman)
+
+Pour simuler instantanément un SMS Orange Money reçu :
+```bash
+curl -X POST http://localhost:3000/api/webhooks/orange-money/resto-premium-01 \
+  -H "Content-Type: application/json" \
+  -H "x-webhook-secret: resto_secret_2026" \
+  -d '{"message": "Vous avez recu 3500 FCFA de 70123456. Trans ID: CI240915.1234. Nouveau solde 50000 FCFA."}'
+```
+*Le serveur valide automatiquement la commande en attente de 3500 FCFA et émet un événement Socket.io pour basculer instantanément l'écran du client et de la cuisine.*
