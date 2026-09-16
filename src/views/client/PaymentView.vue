@@ -74,10 +74,13 @@ const dynamicOperatorConfig = computed(() => {
   }
 })
 
+// Alias pour rétrocompatibilité
+const OPERATOR_CONFIG = dynamicOperatorConfig
+
 // Opérateur actuellement sélectionné
 const currentOperator = computed(() => {
   const method = order.value?.modePaiement || order.value?.mode_paiement || 'orange_money'
-  return dynamicOperatorConfig.value[method] || dynamicOperatorConfig.value.orange_money
+  return dynamicOperatorConfig.value?.[method] || dynamicOperatorConfig.value?.orange_money || {}
 })
 
 // Minuteur TTL (10 minutes)
@@ -90,10 +93,12 @@ const orderAmount = computed(() => {
 })
 
 const currentUssdCode = computed(() => {
+  if (!currentOperator.value?.getUssd) return ''
   return currentOperator.value.getUssd(orderAmount.value)
 })
 
 const currentActionUrl = computed(() => {
+  if (!currentOperator.value?.getTelUrl) return '#'
   return currentOperator.value.getTelUrl(orderAmount.value)
 })
 
@@ -240,35 +245,42 @@ const handleSocketPaymentUpdated = (updatedOrder) => {
 
 onMounted(async () => {
   isLoading.value = true
-  const initialData = await orderStore.fetchOrderStatus(orderId.value)
-  order.value = initialData
-  isLoading.value = false
+  try {
+    const initialData = await orderStore.fetchOrderStatus(orderId.value)
+    order.value = initialData
 
-  if (order.value) {
-    if (order.value.restaurantId || order.value.restaurant_id) {
-      try {
-        restaurantInfo.value = await getRestaurantByIdOrSlug(order.value.restaurantId || order.value.restaurant_id)
-      } catch (e) {
-        console.warn('Info restaurant non récupérée:', e)
+    if (order.value) {
+      if (order.value.restaurantId || order.value.restaurant_id) {
+        try {
+          restaurantInfo.value = await getRestaurantByIdOrSlug(order.value.restaurantId || order.value.restaurant_id)
+        } catch (e) {
+          console.warn('Info restaurant non récupérée:', e)
+        }
       }
+      updateCountdown()
+      await generateQrCode()
+
+      if (order.value.statut === 'PAYEE' || order.value.statut === 'EN_PREPARATION') {
+        router.push(`/confirmation/${orderId.value}`)
+        return
+      }
+
+      // Connexion WebSocket temps réel
+      joinOrderRoom(orderId.value)
+      socket = getSocket()
+      if (socket) {
+        socket.on('order:status_changed', handleSocketStatus)
+        socket.on('order:payment_updated', handleSocketPaymentUpdated)
+      }
+
+      timerInterval = setInterval(updateCountdown, 1000)
+      // Polling de secours dégradé (sécurité réseau mobile)
+      pollingInterval = setInterval(checkStatus, 5000)
     }
-    updateCountdown()
-    await generateQrCode()
-
-    if (order.value.statut === 'PAYEE' || order.value.statut === 'EN_PREPARATION') {
-      router.push(`/confirmation/${orderId.value}`)
-      return
-    }
-
-    // Connexion WebSocket temps réel
-    joinOrderRoom(orderId.value)
-    socket = getSocket()
-    socket.on('order:status_changed', handleSocketStatus)
-    socket.on('order:payment_updated', handleSocketPaymentUpdated)
-
-    timerInterval = setInterval(updateCountdown, 1000)
-    // Polling de secours dégradé (sécurité réseau mobile)
-    pollingInterval = setInterval(checkStatus, 5000)
+  } catch (err) {
+    console.error("Erreur chargement commande:", err)
+  } finally {
+    isLoading.value = false
   }
 })
 
@@ -317,7 +329,7 @@ onUnmounted(() => {
           <span class="switcher-title">Moyen de paiement :</span>
           <div class="switcher-buttons">
             <button 
-              v-for="op in Object.values(OPERATOR_CONFIG)" 
+              v-for="op in Object.values(dynamicOperatorConfig)" 
               :key="op.id"
               class="switch-btn"
               :class="{ active: currentOperator.id === op.id, [op.id]: true }"
@@ -430,6 +442,14 @@ onUnmounted(() => {
             {{ isCancelling ? 'Annulation en cours...' : '✕ Annuler la commande (libérer le stock)' }}
           </button>
         </div>
+      </div>
+
+      <!-- État Commande Introuvable -->
+      <div v-else class="status-card error-card">
+        <div class="status-icon">⚠️</div>
+        <h2>Commande introuvable</h2>
+        <p>Impossible de retrouver cette commande. Veuillez vérifier votre lien ou passer une nouvelle commande.</p>
+        <router-link to="/menu" class="btn-primary">Retourner au menu</router-link>
       </div>
     </main>
 
