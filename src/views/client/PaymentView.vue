@@ -21,26 +21,47 @@ const qrCodeDataUrl = ref('')
 const copied = ref(false)
 
 // Configuration Multi-Opérateurs Mobile Money dynamique (Multi-Tenant)
+// Configuration Multi-Opérateurs Mobile Money dynamique (Multi-Tenant)
 const dynamicOperatorConfig = computed(() => {
   const restoName = restaurantInfo.value?.name || 'RestoPremium'
-  const orangeCode = restaurantInfo.value?.orange_merchant || '654321'
+  const typeCompteOM = (restaurantInfo.value?.type_compte_om || 'CLASSIQUE').toUpperCase()
+  const isOmMarchand = typeCompteOM === 'MARCHAND'
+  const orangeMerchantCode = restaurantInfo.value?.code_marchand_om || restaurantInfo.value?.orange_merchant || '654321'
+  const orangePhone = restaurantInfo.value?.numero_om || restaurantInfo.value?.phone?.replace(/\D/g, '').slice(-8) || '70000000'
+  const codeRef = order.value?.codeReference || order.value?.code_reference || ''
+
   const moovCode = restaurantInfo.value?.moov_merchant || '54321'
   const waveId = restaurantInfo.value?.wave_merchant || 'resto-premium'
   const waveDirectUrl = restaurantInfo.value?.wave_url || `https://pay.wave.com/m/${waveId}`
 
+  // Syntaxe USSD Orange Money :
+  // - Marchand : *144*4*6*codeMarchand*montant*codeReference#
+  // - Classique (P2P Caissier) : *144*1*1*numeroOM*montant#
+  const getOmUssd = (amount) => isOmMarchand
+    ? `*144*4*6*${orangeMerchantCode}*${amount}*${codeRef}#`
+    : `*144*1*1*${orangePhone}*${amount}#`
+
+  const getOmTelUrl = (amount) => isOmMarchand
+    ? `tel:*144*4*6*${orangeMerchantCode}*${amount}*${codeRef}%23`
+    : `tel:*144*1*1*${orangePhone}*${amount}%23`
+
   return {
     orange_money: {
       id: 'orange_money',
-      name: 'Orange Money Burkina',
+      name: isOmMarchand ? 'Orange Money (Compte Marchand)' : 'Orange Money (Transfert Direct)',
       shortName: 'Orange Money',
       icon: '🟠',
-      merchantCode: orangeCode,
+      accountType: typeCompteOM,
+      merchantCode: isOmMarchand ? orangeMerchantCode : orangePhone,
+      codeReference: codeRef,
       themeClass: 'theme-orange',
       accentColor: '#ff7900',
       type: 'ussd',
-      getUssd: (amount) => `*144*4*6*${orangeCode}*${amount}#`,
-      getTelUrl: (amount) => `tel:*144*4*6*${orangeCode}*${amount}%23`,
-      step1: `Composez le code marchand ${restoName}`,
+      getUssd: getOmUssd,
+      getTelUrl: getOmTelUrl,
+      step1: isOmMarchand 
+        ? `Code Marchand : ${orangeMerchantCode} · Référence : ${codeRef}` 
+        : `Numéro Caissier : ${orangePhone}`,
       step2: 'Saisissez votre code secret Orange Money pour valider'
     },
     moov_money: {
@@ -341,7 +362,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- En-tête & Minuteur TTL -->
+        <!-- En-tête & Statut de validation en cours -->
         <div class="payment-header">
           <div class="brand-badge">
             <span class="brand-icon">{{ currentOperator.icon }}</span>
@@ -351,9 +372,9 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="countdown-box" :class="{ 'warning-time': timeLeftSeconds < 180 }">
-            <span class="countdown-label">TEMPS RESTANT</span>
-            <span class="countdown-value">{{ formattedTime }}</span>
+          <div class="status-waiting-indicator">
+            <span class="spinner-mini"></span>
+            <span class="status-waiting-text">⏳ En attente de validation du paiement...</span>
           </div>
         </div>
 
@@ -361,6 +382,26 @@ onUnmounted(() => {
         <div class="amount-banner">
           <span class="amount-label">Montant total à payer :</span>
           <span class="amount-value">{{ orderAmount.toLocaleString() }} FCFA</span>
+        </div>
+
+        <!-- Détails spécifiques Orange Money (Marchand avec Code Réf vs Classique avec Numéro Caissier) -->
+        <div v-if="currentOperator.id === 'orange_money'" class="om-account-info-box">
+          <div v-if="currentOperator.accountType === 'MARCHAND'" class="om-detail-grid">
+            <div class="om-info-card">
+              <span class="om-card-lbl">🏪 CODE MARCHAND</span>
+              <span class="om-card-val">{{ currentOperator.merchantCode }}</span>
+            </div>
+            <div class="om-info-card highlight-ref">
+              <span class="om-card-lbl">🔑 CODE RÉFÉRENCE UNIQUE</span>
+              <span class="om-card-val ref-code">{{ currentOperator.codeReference }}</span>
+            </div>
+          </div>
+          <div v-else class="om-detail-grid">
+            <div class="om-info-card">
+              <span class="om-card-lbl">👤 NUMÉRO DU CAISSIER (P2P)</span>
+              <span class="om-card-val">{{ currentOperator.merchantCode }}</span>
+            </div>
+          </div>
         </div>
 
         <!-- Instructions selon l'opérateur -->
@@ -664,35 +705,75 @@ onUnmounted(() => {
   color: #888;
 }
 
-.countdown-box {
-  background: #1c1c1c;
-  border: 1px solid #333;
+.status-waiting-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(212, 175, 55, 0.08);
+  border: 1px solid rgba(212, 175, 55, 0.3);
   border-radius: 8px;
-  padding: 0.6rem 1.2rem;
-  text-align: right;
+  padding: 0.65rem 1.1rem;
 }
 
-.countdown-box.warning-time {
-  border-color: #e74c3c;
-  background: rgba(231, 76, 60, 0.1);
+.spinner-mini {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(212, 175, 55, 0.2);
+  border-top-color: #d4af37;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
 }
 
-.countdown-label {
-  display: block;
-  font-size: 0.65rem;
-  color: #888;
-  letter-spacing: 0.5px;
-}
-
-.countdown-value {
-  font-family: monospace;
-  font-size: 1.6rem;
-  font-weight: bold;
+.status-waiting-text {
+  font-size: 0.85rem;
+  font-weight: 600;
   color: #d4af37;
 }
 
-.warning-time .countdown-value {
-  color: #ff6b6b;
+.om-account-info-box {
+  margin-bottom: 2rem;
+}
+
+.om-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.om-info-card {
+  background: #181818;
+  border: 1px solid rgba(255, 121, 0, 0.25);
+  border-radius: 8px;
+  padding: 0.9rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.om-info-card.highlight-ref {
+  border-color: #ff7900;
+  background: rgba(255, 121, 0, 0.08);
+}
+
+.om-card-lbl {
+  font-size: 0.72rem;
+  letter-spacing: 0.5px;
+  color: #aaa;
+  font-weight: 600;
+}
+
+.om-card-val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.om-card-val.ref-code {
+  font-family: monospace;
+  font-size: 1.4rem;
+  color: #ff7900;
+  letter-spacing: 2px;
 }
 
 .amount-banner {

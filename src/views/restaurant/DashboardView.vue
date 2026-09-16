@@ -208,10 +208,19 @@ const handleRealtimeOrderExpired = ({ id }) => {
 
 const handleRealtimeOrderValidated = (order) => {
   if (!order) return
-  // Retirer de la caisse
-  caisseOrders.value = caisseOrders.value.filter(o => o.id !== order.id)
 
-  // Ajouter à la cuisine
+  // Ajouter à la caisse (affichage des commandes payées)
+  if (authStore.isCaisse) {
+    if (!caisseOrders.value.some(o => o.id === order.id)) {
+      caisseOrders.value.unshift(order)
+      playNotificationSound()
+    } else {
+      const idx = caisseOrders.value.findIndex(o => o.id === order.id)
+      if (idx !== -1) caisseOrders.value[idx] = { ...caisseOrders.value[idx], ...order }
+    }
+  }
+
+  // Ajouter à la cuisine (KDS)
   if (authStore.isCuisine) {
     if (!cuisineOrders.value.some(o => o.id === order.id)) {
       cuisineOrders.value.unshift(order)
@@ -223,6 +232,10 @@ const handleRealtimeOrderValidated = (order) => {
 const handleRealtimeOrderReady = (order) => {
   if (!order) return
   cuisineOrders.value = cuisineOrders.value.filter(o => o.id !== order.id)
+  const idx = caisseOrders.value.findIndex(o => o.id === order.id)
+  if (idx !== -1) {
+    caisseOrders.value[idx] = { ...caisseOrders.value[idx], statut: 'PRETE' }
+  }
 }
 
 onMounted(() => {
@@ -237,9 +250,7 @@ onMounted(() => {
   socket.on('order:payment_updated', handleRealtimePaymentUpdated)
   socket.on('order:cancelled', handleRealtimeOrderCancelled)
   socket.on('order:expired', handleRealtimeOrderExpired)
-  socket.on('order:caisse_validated', (order) => {
-    caisseOrders.value = caisseOrders.value.filter(o => o.id !== order.id)
-  })
+  socket.on('order:caisse_validated', handleRealtimeOrderValidated)
   socket.on('order:validated', handleRealtimeOrderValidated)
   socket.on('order:ready', handleRealtimeOrderReady)
   socket.on('order:cuisine_ready', handleRealtimeOrderReady)
@@ -332,19 +343,19 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <!-- VUE 1 : CAISSE (ENCAISSEMENT ORANGE MONEY) -->
+      <!-- VUE 1 : CAISSE (COMMANDES ENCAISSÉES & VALIDÉES) -->
       <section v-if="activeTab === 'caisse'" class="tab-content">
         <div class="caisse-intro-bar">
           <div class="caisse-help">
-            <strong>Procédure Caissier :</strong>
-            <span>1. Repérez l'opérateur (Orange Money, Moov Money ou Wave) et le montant. 2. Contrôlez la réception des fonds (Orange Max it, SMS Moov, App Wave). 3. Cliquez sur <em>Valider l'encaissement</em>.</span>
+            <strong>Contrôle Caisse :</strong>
+            <span>Seules les commandes dont le paiement a été validé (automatiquement via Orange Money ou manuellement) sont affichées ici et envoyées en Cuisine. Les commandes en attente restent invisibles.</span>
           </div>
         </div>
 
         <div v-if="caisseOrders.length === 0" class="empty-state">
           <span class="empty-icon">✓</span>
-          <h3>Aucun paiement en attente</h3>
-          <p>Toutes les commandes ont été traitées ou les fonds encaissés.</p>
+          <h3>Aucune commande en cours</h3>
+          <p>Toutes les commandes payées ont été traitées.</p>
         </div>
 
         <div v-else class="orders-grid">
@@ -360,8 +371,8 @@ onUnmounted(() => {
                   {{ getOpBadgeText(order.modePaiement || order.mode_paiement) }}
                 </span>
               </div>
-              <span class="timer-tag" :class="{ danger: getTimeLeft(order.expiresAt) < '03:00' }">
-                ⏳ {{ getTimeLeft(order.expiresAt) }}
+              <span class="paid-verified-tag">
+                {{ order.statut === 'PRETE' ? 'PRÊTE ✓' : 'PAYÉE ✓' }}
               </span>
             </div>
 
@@ -370,7 +381,11 @@ onUnmounted(() => {
               <p class="client-phone">
                 📞 {{ getOpLabel(order.modePaiement || order.mode_paiement) }}: <strong>{{ order.numeroClient || order.customerPhone || 'Non renseigné' }}</strong>
               </p>
-              <span class="order-id">#{{ order.id }}</span>
+              <div class="order-identifiers">
+                <span class="order-id">#{{ order.id }}</span>
+                <span v-if="order.codeReference" class="order-ref-code">🔑 Réf: <strong>{{ order.codeReference }}</strong></span>
+                <span v-if="order.transactionRef" class="order-tx-ref">Trans: {{ order.transactionRef }}</span>
+              </div>
             </div>
 
             <div class="items-preview">
@@ -386,17 +401,13 @@ onUnmounted(() => {
 
             <div class="card-bottom">
               <div class="total-badge">
-                <span class="lbl">TOTAL À ENCAISSER</span>
+                <span class="lbl">TOTAL ENCAISSÉ</span>
                 <span class="val">{{ (order.montantTotal || order.total || 0).toLocaleString() }} FCFA</span>
               </div>
 
-              <button 
-                class="btn-valider"
-                :disabled="isProcessing"
-                @click="handleValiderEncaissement(order.id)"
-              >
-                ✓ Valider l'encaissement (Max it)
-              </button>
+              <div class="paid-status-indicator">
+                <span class="paid-check-badge">✓ Validé & En Cuisine</span>
+              </div>
             </div>
           </div>
         </div>
@@ -728,6 +739,45 @@ onUnmounted(() => {
 .order-id {
   font-size: 0.75rem;
   color: #666;
+}
+
+.order-identifiers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.order-ref-code {
+  font-size: 0.8rem;
+  color: #ff7900;
+  background: rgba(255, 121, 0, 0.1);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 121, 0, 0.3);
+  font-family: monospace;
+}
+
+.order-tx-ref {
+  font-size: 0.75rem;
+  color: #aaa;
+  font-family: monospace;
+}
+
+.paid-status-indicator {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.paid-check-badge {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.4);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  display: inline-block;
 }
 
 .items-preview {

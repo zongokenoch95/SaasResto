@@ -99,14 +99,19 @@ async function runTests() {
     const cancelledOrder = await db.getOrderById(createdOrder.id);
     assert(cancelledOrder.statut === 'ANNULEE_PAR_CLIENT', 'Statut mis à jour en ANNULEE_PAR_CLIENT');
 
-    // 7. Cycle complet : Caisse -> Cuisine
+    // 7. Cycle complet : Caisse -> Cuisine & Règle d'invisibilité des commandes non payées
     const orderForPrep = await db.createOrderTransaction(testOrder);
-    const pendingCaisse = await db.getPendingCaisseOrders();
-    assert(pendingCaisse.some(o => o.id === orderForPrep.id), 'Commande en attente visible en Caisse');
+    assert(orderForPrep.codeReference && orderForPrep.codeReference.length === 4, 'Génération dynamique du code référence unique à 4 caractères');
+
+    const pendingCaisseBeforePay = await db.getPendingCaisseOrders();
+    assert(!pendingCaisseBeforePay.some(o => o.id === orderForPrep.id), 'Invisibilité garantie : commande EN_ATTENTE invisible en Caisse');
 
     await db.validateOrderCaisse(orderForPrep.id);
     const validatedOrder = await db.getOrderById(orderForPrep.id);
     assert(validatedOrder.statut === 'EN_PREPARATION', 'Statut passé à EN_PREPARATION après validation caisse');
+
+    const pendingCaisseAfterPay = await db.getPendingCaisseOrders();
+    assert(pendingCaisseAfterPay.some(o => o.id === orderForPrep.id), 'Visibilité caisse : commande payée visible en Caisse');
 
     const activeCuisine = await db.getActiveCuisineOrders();
     assert(activeCuisine.some(o => o.id === orderForPrep.id), 'Commande transmise au KDS Cuisine');
@@ -188,12 +193,34 @@ async function runTests() {
       'Calcul des statistiques globales consolidées de la plateforme SaaS'
     );
 
-    // 11. Passerelle Webhook & Validation Automatique des Paiements (Orange Money / MacroDroid Bridge)
+    // 11. Passerelle Webhook & Validation Automatique des Paiements (Orange Money BF Hybride)
+    // Vérification de la configuration hybride en base de données
+    const restoPremium = await db.getRestaurantByIdOrSlug('resto-premium-01');
+    assert(
+      restoPremium.type_compte_om === 'MARCHAND' && restoPremium.code_marchand_om === '654321',
+      'Architecture Multi-Tenant : Resto Premium configuré en Compte Marchand Orange Money'
+    );
+
+    const leBraise = await db.getRestaurantByIdOrSlug('le-braise-02');
+    assert(
+      leBraise.type_compte_om === 'CLASSIQUE' && leBraise.numero_om === '76000002',
+      'Architecture Multi-Tenant : Le Braisé configuré en Compte Classique P2P Orange Money'
+    );
+
+    // Parsing SMS Marchand avec Code Référence
+    const marchSms = "Paiement de 5000 FCFA recu de 70000001 ref K9X2 Trans ID: OM2609.1111.";
+    const parsedMarchSms = parsePaymentNotification(marchSms);
+    assert(
+      parsedMarchSms.amount === 5000 && parsedMarchSms.codeReference === 'K9X2' && parsedMarchSms.transactionRef === 'OM2609.1111',
+      'Parsing lexical SMS Marchand Orange Money (Montant, Code Référence, Trans ID)'
+    );
+
+    // Parsing SMS Classique standard P2P
     const testSms = "Vous avez recu 3500 FCFA de +226 70 12 34 56. Trans ID: CI240915.1010. Nouveau solde: 55000 FCFA.";
     const parsedSms = parsePaymentNotification(testSms);
     assert(
       parsedSms.amount === 3500 && parsedSms.senderPhone === '70123456' && parsedSms.transactionRef === 'CI240915.1010',
-      'Parsing lexical du SMS Orange Money (Montant, Expéditeur, Trans ID)'
+      'Parsing lexical SMS Classique Orange Money (Montant, Numéro Caissier/Client, Trans ID)'
     );
 
     // Rejet si secret webhook manquant ou invalide (Sécurité Anti-Fraude)
@@ -207,7 +234,35 @@ async function runTests() {
       'Sécurité Webhook : Rejet immédiat (401) si le secret est absent ou invalide'
     );
 
-    // Création d'une commande cible pour test de réconciliation
+    // Matching NIVEAU 1 : Compte MARCHAND - Réconciliation 100% déterministe via codeReference unique
+    const marchandOrder = await db.createOrderTransaction({
+      restaurantId: 'resto-premium-01',
+      customerName: 'Client CI Marchand',
+      numeroClient: '70998877',
+      tableNumber: 5,
+      montantTotal: 5000,
+      items: [{ id: 1, name: 'Poulet braisé', quantity: 1, price: 5000 }]
+    });
+
+    const marchandWebhookRes = await fetch(`${BASE_URL}/api/webhooks/orange-money/resto-premium-01`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-webhook-secret': 'resto_secret_2026'
+      },
+      body: JSON.stringify({
+        message: `Paiement marchand de 5000 FCFA recu de 70998877 ref ${marchandOrder.codeReference} Trans ID: OM-MARCH-001.`
+      })
+    });
+    const marchandWebhookData = await marchandWebhookRes.json();
+    assert(
+      marchandWebhookData.matched === true && 
+      marchandWebhookData.orderId === marchandOrder.id &&
+      (marchandWebhookData.matchedBy === 'code_reference' || marchandWebhookData.matchedBy === 'code_reference_in_message'),
+      'Matching Niveau 1 (Marchand) : Validation 100% déterministe via Code Référence court'
+    );
+
+    // Matching NIVEAU 2 : Compte CLASSIQUE - Réconciliation stricte par Téléphone Client + Montant
     const webhookOrder = await db.createOrderTransaction({
       restaurantId: 'resto-premium-01',
       customerName: 'Client CI Webhook',
@@ -228,8 +283,8 @@ async function runTests() {
     });
     const webhookData = await webhookRes.json();
     assert(
-      webhookData.success === true && webhookData.matched === true && webhookData.orderId === webhookOrder.id,
-      'Réconciliation automatique réussie de la commande via Webhook MacroDroid'
+      webhookData.success === true && webhookData.matched === true && webhookData.orderId === webhookOrder.id && webhookData.matchedBy === 'phone_and_amount',
+      'Matching Niveau 2 (Classique) : Réconciliation par Numéro Client + Montant'
     );
 
     const updatedWebhookOrder = await db.getOrderById(webhookOrder.id);

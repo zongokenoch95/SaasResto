@@ -98,3 +98,74 @@ curl -X POST http://localhost:3000/api/webhooks/orange-money/resto-premium-01 \
   -d '{"message": "Vous avez recu 3500 FCFA de 70123456. Trans ID: CI240915.1234. Nouveau solde 50000 FCFA."}'
 ```
 *Le serveur valide automatiquement la commande en attente de 3500 FCFA et émet un événement Socket.io pour basculer instantanément l'écran du client et de la cuisine.*
+
+
+
+# Spécification Technique & Implémentation : Système Hybride de Validation Automatique de Commandes (Orange Money BF)
+
+Agis en tant que développeur full-stack senior. Je souhaite refondre le flux de commande et le système de réconciliation des paiements Orange Money pour notre SaaS de restaurant.
+
+---
+
+## 1. Nouvelle Règle Métier Principale
+- **Côté Caisse / Cuisine :** Une commande n'apparaît JAMAIS sur l'interface caisse ou cuisine tant qu'elle est au statut `EN_ATTENTE_DE_PAIEMENT`. La caisse ne doit récupérer et afficher que les commandes ayant le statut `PAYEE` ou `EN_PREPARATION` (pour éviter les commandes fantômes et paniers abandonnés).
+- **Côté Client :** Validation du panier ➔ Création de commande avec un TTL de 10 minutes (`EN_ATTENTE_DE_PAIEMENT`) ➔ Redirection sur l'écran de paiement ➔ Polling actif (toutes les 3s) du statut de la commande.
+- **Délai TTL (10 min) :** Permet de libérer les stocks réservés si abandon et sert de fenêtre stricte de réconciliation pour désambiguïser les montants identiques.
+
+---
+
+## 2. Prise en Compte des Deux Types de Comptes Orange Money (Multi-tenant)
+Chaque restaurant peut être configuré soit avec un compte marchand officiel, soit avec un compte classique (numéro personnel).
+
+### A. Modifications Schéma Base de Données (ex: Prisma)
+- Ajouter sur le modèle `Restaurant` :
+  - `typeCompteOM` : Enum (`MARCHAND`, `CLASSIQUE`) (défaut: `CLASSIQUE`).
+  - `numeroOM` : String (numéro du téléphone physique de caisse).
+  - `codeMarchand` : String? (code à 6 chiffres, requis si `MARCHAND`).
+- Ajouter sur le modèle `Commande` :
+  - `codeReference` : String unique (ex: 4 à 6 caractères alphanumériques).
+  - `numeroClient` : String? (numéro de téléphone du payeur).
+  - `expiresAt` : DateTime (création + 10 minutes).
+  - `payeAt` : DateTime?
+
+---
+
+## 3. Logique Frontend (Vue 3 / Page Paiement)
+Adapter l'interface de paiement selon le type de compte du restaurant :
+1. **Si `MARCHAND` :**
+   - Le champ du numéro client est facultatif.
+   - Bouton / QR Code USSD généré :  
+     `tel:*144*4*6*CODE_MARCHAND*MONTANT*codeReference%23`
+2. **Si `CLASSIQUE` :**
+   - Rendre le champ "Votre numéro Orange Money" obligatoire avant de générer l'USSD.
+   - Bouton / QR Code USSD généré :  
+     `tel:*144*1*1*numeroOM*MONTANT%23`
+3. Afficher un compte à rebours de 10:00 avec gestion de l'expiration.
+
+---
+
+## 4. Webhook Backend (`POST /api/webhooks/orange-money-notification`)
+Le serveur reçoit depuis MacroDroid un payload JSON :
+`{ "message": "texte du sms ou notification push" }`
+
+Implémenter la logique de parsing et de réconciliation suivante :
+1. **Extraction Regex :**
+   - Montant : extraire le nombre associé à FCFA / F.
+   - Référence éventuelle : extraire la référence si présente.
+   - Numéro expéditeur éventuel : extraire le numéro `7X...` ou `+226...`.
+2. **Matching déterministe à 2 niveaux :**
+   - **Niveau 1 (Marchand) :** Si une référence est trouvée dans le texte, chercher la commande avec `codeReference` + `montantTotal` + statut `EN_ATTENTE_DE_PAIEMENT`.
+   - **Niveau 2 (Classique) :** Si aucune référence, chercher avec `montantTotal` + `numeroClient` (contenant le numéro extrait) + statut `EN_ATTENTE_DE_PAIEMENT` + non expirée (`expiresAt > now()`), triée par `createdAt: 'desc'`.
+3. **Mise à jour :**
+   - Passer la commande à `PAYEE`, renseigner `payeAt: new Date()`.
+   - Renvoyer HTTP 200 avec confirmation.
+
+---
+
+## 5. Ce que tu dois faire maintenant
+1. Analyse mes fichiers existants pour les commandes et le webhook (ex: routes, contrôleurs, schéma DB).
+2. Propose le code exact pour mettre à jour le schéma de données.
+3. Implémente la route du webhook `/api/webhooks/orange-money-notification` avec la double logique Regex (Marchand vs Classique).
+4. Assure-toi que la route GET des commandes caisse filtre strictement `statut: { in: ['PAYEE', 'EN_PREPARATION'] }`.
+
+

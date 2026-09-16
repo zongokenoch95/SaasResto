@@ -56,6 +56,9 @@ export async function initDb() {
       city TEXT DEFAULT 'Ouagadougou',
       currency TEXT DEFAULT 'FCFA',
       orange_merchant TEXT DEFAULT '654321',
+      type_compte_om TEXT DEFAULT 'CLASSIQUE',
+      numero_om TEXT DEFAULT '70000000',
+      code_marchand_om TEXT DEFAULT '654321',
       moov_merchant TEXT DEFAULT '54321',
       wave_merchant TEXT DEFAULT 'resto-premium',
       wave_url TEXT DEFAULT 'https://pay.wave.com/m/resto-premium',
@@ -65,6 +68,16 @@ export async function initDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  try {
+    await run(`ALTER TABLE restaurants ADD COLUMN type_compte_om TEXT DEFAULT 'CLASSIQUE'`);
+  } catch (err) {}
+  try {
+    await run(`ALTER TABLE restaurants ADD COLUMN numero_om TEXT DEFAULT '70000000'`);
+  } catch (err) {}
+  try {
+    await run(`ALTER TABLE restaurants ADD COLUMN code_marchand_om TEXT DEFAULT '654321'`);
+  } catch (err) {}
 
   // 2. Table Produits
   await run(`
@@ -86,7 +99,7 @@ export async function initDb() {
     await run(`ALTER TABLE products ADD COLUMN restaurant_id TEXT DEFAULT 'resto-premium-01'`);
   } catch (err) {}
 
-  // 3. Table Commandes (avec mode de paiement et restaurant_id)
+  // 3. Table Commandes (avec mode de paiement, code_reference et restaurant_id)
   await run(`
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY,
@@ -99,6 +112,7 @@ export async function initDb() {
       montant_total INTEGER NOT NULL,
       mode_paiement TEXT DEFAULT 'orange_money',
       statut TEXT NOT NULL,
+      code_reference TEXT,
       transaction_ref TEXT,
       created_at DATETIME NOT NULL,
       expires_at DATETIME NOT NULL,
@@ -114,6 +128,10 @@ export async function initDb() {
 
   try {
     await run(`ALTER TABLE orders ADD COLUMN transaction_ref TEXT`);
+  } catch (err) {}
+
+  try {
+    await run(`ALTER TABLE orders ADD COLUMN code_reference TEXT`);
   } catch (err) {}
 
   // 4. Table Articles de Commande
@@ -150,8 +168,8 @@ export async function initDb() {
   const restoCount = await get('SELECT COUNT(*) as count FROM restaurants');
   if (restoCount.count === 0) {
     await run(`
-      INSERT INTO restaurants (id, name, slug, phone, address, city, currency, orange_merchant, moov_merchant, wave_merchant, wave_url, logo, plan, statut)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO restaurants (id, name, slug, phone, address, city, currency, orange_merchant, type_compte_om, numero_om, code_marchand_om, moov_merchant, wave_merchant, wave_url, logo, plan, statut)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       'resto-premium-01',
       'RestoPremium Ouaga',
@@ -160,6 +178,9 @@ export async function initDb() {
       'Avenue Kwame Nkrumah',
       'Ouagadougou',
       'FCFA',
+      '654321',
+      'MARCHAND',
+      '70000001',
       '654321',
       '54321',
       'resto-premium',
@@ -170,8 +191,8 @@ export async function initDb() {
     ]);
 
     await run(`
-      INSERT INTO restaurants (id, name, slug, phone, address, city, currency, orange_merchant, moov_merchant, wave_merchant, wave_url, logo, plan, statut)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO restaurants (id, name, slug, phone, address, city, currency, orange_merchant, type_compte_om, numero_om, code_marchand_om, moov_merchant, wave_merchant, wave_url, logo, plan, statut)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       'le-braise-02',
       'Le Braisé Gourmet',
@@ -181,6 +202,9 @@ export async function initDb() {
       'Ouagadougou',
       'FCFA',
       '778899',
+      'CLASSIQUE',
+      '76000002',
+      '',
       '99887',
       'le-braise',
       'https://pay.wave.com/m/le-braise',
@@ -190,6 +214,12 @@ export async function initDb() {
     ]);
     console.log('🏢 Seeding initial : 2 restaurants créés dans SQLite.');
   }
+
+  // Configuration par défaut Orange Money pour les restaurants de démonstration
+  try {
+    await run(`UPDATE restaurants SET type_compte_om = 'MARCHAND', code_marchand_om = '654321', numero_om = '70000001' WHERE id = 'resto-premium-01'`);
+    await run(`UPDATE restaurants SET type_compte_om = 'CLASSIQUE', numero_om = '76000002', code_marchand_om = '' WHERE id = 'le-braise-02'`);
+  } catch (err) {}
 
   // Seeding Produits si table vide
   const productCount = await get('SELECT COUNT(*) as count FROM products');
@@ -284,6 +314,9 @@ export async function createRestaurant(data) {
   const city = data.city || 'Ouagadougou';
   const currency = data.currency || 'FCFA';
   const orangeMerchant = data.orangeMerchant || data.orange_merchant || '654321';
+  const typeCompteOM = data.typeCompteOM || data.type_compte_om || 'CLASSIQUE';
+  const numeroOM = data.numeroOM || data.numero_om || phone || '70000000';
+  const codeMarchandOM = data.codeMarchandOM || data.code_marchand_om || orangeMerchant || '654321';
   const moovMerchant = data.moovMerchant || data.moov_merchant || '54321';
   const waveMerchant = data.waveMerchant || data.wave_merchant || slug;
   const waveUrl = data.waveUrl || data.wave_url || `https://pay.wave.com/m/${slug}`;
@@ -292,9 +325,9 @@ export async function createRestaurant(data) {
   const logo = data.logo || '/assets/couverture.png';
 
   await run(`
-    INSERT INTO restaurants (id, name, slug, phone, address, city, currency, orange_merchant, moov_merchant, wave_merchant, wave_url, logo, plan, statut)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [id, name, slug, phone, address, city, currency, orangeMerchant, moovMerchant, waveMerchant, waveUrl, logo, plan, statut]);
+    INSERT INTO restaurants (id, name, slug, phone, address, city, currency, orange_merchant, type_compte_om, numero_om, code_marchand_om, moov_merchant, wave_merchant, wave_url, logo, plan, statut)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [id, name, slug, phone, address, city, currency, orangeMerchant, typeCompteOM, numeroOM, codeMarchandOM, moovMerchant, waveMerchant, waveUrl, logo, plan, statut]);
 
   // Compte caisse et cuisine par défaut pour ce restaurant
   await run(
@@ -319,6 +352,9 @@ export async function updateRestaurant(id, data) {
   const city = data.city ?? existing.city;
   const currency = data.currency ?? existing.currency;
   const orangeMerchant = data.orangeMerchant ?? data.orange_merchant ?? existing.orange_merchant;
+  const typeCompteOM = data.typeCompteOM ?? data.type_compte_om ?? existing.type_compte_om ?? 'CLASSIQUE';
+  const numeroOM = data.numeroOM ?? data.numero_om ?? existing.numero_om ?? phone;
+  const codeMarchandOM = data.codeMarchandOM ?? data.code_marchand_om ?? existing.code_marchand_om ?? orangeMerchant;
   const moovMerchant = data.moovMerchant ?? data.moov_merchant ?? existing.moov_merchant;
   const waveMerchant = data.waveMerchant ?? data.wave_merchant ?? existing.wave_merchant;
   const waveUrl = data.waveUrl ?? data.wave_url ?? existing.wave_url;
@@ -329,10 +365,11 @@ export async function updateRestaurant(id, data) {
   await run(`
     UPDATE restaurants 
     SET name = ?, phone = ?, address = ?, city = ?, currency = ?, 
-        orange_merchant = ?, moov_merchant = ?, wave_merchant = ?, wave_url = ?, 
+        orange_merchant = ?, type_compte_om = ?, numero_om = ?, code_marchand_om = ?, 
+        moov_merchant = ?, wave_merchant = ?, wave_url = ?, 
         logo = ?, plan = ?, statut = ?
     WHERE id = ?
-  `, [name, phone, address, city, currency, orangeMerchant, moovMerchant, waveMerchant, waveUrl, logo, plan, statut, id]);
+  `, [name, phone, address, city, currency, orangeMerchant, typeCompteOM, numeroOM, codeMarchandOM, moovMerchant, waveMerchant, waveUrl, logo, plan, statut, id]);
 
   return getRestaurantByIdOrSlug(id);
 }
@@ -389,6 +426,16 @@ export async function getStaffByPin(pin, restaurantId) {
 // MÉTIER : COMMANDES & TRANSACTIONS ACID
 // ==========================================
 
+// Génération d'un Code Référence Unique court (4 caractères alphanumériques majuscules)
+export function generateCodeReference() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 4; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
 // Formate une commande de la BD vers la structure attendue par le frontend
 function formatOrder(orderRow, items = []) {
   if (!orderRow) return null;
@@ -420,12 +467,14 @@ function formatOrder(orderRow, items = []) {
     mode_paiement: orderRow.mode_paiement || 'orange_money',
     statut: orderRow.statut,
     status: orderRow.statut,
+    codeReference: orderRow.code_reference || null,
+    code_reference: orderRow.code_reference || null,
     transactionRef: orderRow.transaction_ref || null,
     createdAt: orderRow.created_at,
     expiresAt: orderRow.expires_at,
     paidAt: orderRow.paid_at,
     readyAt: orderRow.ready_at,
-    isPaid: orderRow.statut === 'EN_PREPARATION' || orderRow.statut === 'PRETE',
+    isPaid: orderRow.statut === 'EN_PREPARATION' || orderRow.statut === 'PRETE' || orderRow.statut === 'PAYEE',
     items: formattedItems
   };
 }
@@ -518,11 +567,12 @@ export async function createOrderTransaction(orderData) {
       await run('UPDATE products SET stock = stock - ? WHERE id = ?', [qty, prodId]);
     }
 
-    // 3. Insertion de la commande avec mode de paiement
+    // 3. Insertion de la commande avec mode de paiement et code référence unique (Marchand)
+    const codeReference = generateCodeReference();
     await run(
-      `INSERT INTO orders (id, restaurant_id, customer_name, numero_client, customer_phone, table_number, special_notes, montant_total, mode_paiement, statut, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EN_ATTENTE_DE_PAIEMENT', ?, ?)`,
-      [orderId, restaurantId, customerName, finalPhone, finalPhone, Number(tableNumber) || 1, specialNotes, finalTotal, finalPaymentMethod, now.toISOString(), expiresAt]
+      `INSERT INTO orders (id, restaurant_id, customer_name, numero_client, customer_phone, table_number, special_notes, montant_total, mode_paiement, statut, code_reference, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EN_ATTENTE_DE_PAIEMENT', ?, ?, ?)`,
+      [orderId, restaurantId, customerName, finalPhone, finalPhone, Number(tableNumber) || 1, specialNotes, finalTotal, finalPaymentMethod, codeReference, now.toISOString(), expiresAt]
     );
 
     // 4. Insertion des lignes de commande (order_items)
@@ -558,6 +608,8 @@ export async function createOrderTransaction(orderData) {
       total: finalTotal,
       statut: 'EN_ATTENTE_DE_PAIEMENT',
       status: 'EN_ATTENTE_DE_PAIEMENT',
+      codeReference,
+      code_reference: codeReference,
       createdAt: now.toISOString(),
       expiresAt
     };
@@ -611,10 +663,10 @@ export async function cancelOrderClient(orderId) {
   }
 }
 
-// Caisse : Commandes en attente d'encaissement (filtrées optionnellement par restaurant)
+// Caisse : Commandes payées ou en cours de préparation (invisibilité stricte des commandes non payées)
 export async function getPendingCaisseOrders(restaurantId) {
   await checkAndExpireOrders();
-  let query = `SELECT * FROM orders WHERE statut = 'EN_ATTENTE_DE_PAIEMENT'`;
+  let query = `SELECT * FROM orders WHERE statut IN ('PAYEE', 'EN_PREPARATION')`;
   const params = [];
   if (restaurantId && restaurantId !== '*') {
     query += ` AND restaurant_id = ?`;
@@ -650,13 +702,14 @@ export async function validateOrderCaisse(orderId, transactionRef = null) {
   return getOrderById(orderId);
 }
 
-// Réconciliation automatique via webhook mobile (Orange Money / MacroDroid)
+// Réconciliation automatique via webhook mobile (Orange Money Marchand & Classique / MacroDroid)
 export async function reconcilePaymentWebhook({
   restaurantId = 'resto-premium-01',
   rawMessage = '',
   senderPhone = null,
   amount = null,
-  transactionRef = null
+  transactionRef = null,
+  codeReference = null
 }) {
   // 1. Purge et expiration automatique des commandes dépassant les 10 minutes
   await checkAndExpireOrders();
@@ -703,11 +756,32 @@ export async function reconcilePaymentWebhook({
     };
   }
 
-  // 4. Stratégie de matching : Priorité au numéro de téléphone de l'expéditeur
+  // 4. Double Stratégie de Matching Hybride Orange Money :
   let chosenOrder = null;
   let matchedBy = 'fifo';
 
-  if (senderPhone) {
+  // NIVEAU 1 : Compte MARCHAND - Recherche par codeReference unique (4 caractères)
+  if (codeReference) {
+    const cleanRef = String(codeReference).trim().toUpperCase();
+    chosenOrder = pendingOrders.find(o => o.code_reference && o.code_reference.toUpperCase() === cleanRef);
+    if (chosenOrder) {
+      matchedBy = 'code_reference';
+    }
+  }
+
+  // Si pas de codeReference explicite mais message SMS brut fourni, tenter de chercher le codeReference d'une commande dans le message
+  if (!chosenOrder && rawMessage) {
+    for (const order of pendingOrders) {
+      if (order.code_reference && rawMessage.toUpperCase().includes(order.code_reference.toUpperCase())) {
+        chosenOrder = order;
+        matchedBy = 'code_reference_in_message';
+        break;
+      }
+    }
+  }
+
+  // NIVEAU 2 : Compte CLASSIQUE (P2P Particulier) - Réconciliation stricte par Téléphone Client + Montant
+  if (!chosenOrder && senderPhone) {
     const cleanPhone = String(senderPhone).replace(/\D/g, '').slice(-8);
     chosenOrder = pendingOrders.find(o => {
       const clientPhone = String(o.numero_client || o.customer_phone || '').replace(/\D/g, '').slice(-8);
@@ -718,10 +792,15 @@ export async function reconcilePaymentWebhook({
     }
   }
 
-  // Si pas de correspondance téléphonique directe, on sélectionne la commande la plus ancienne (FIFO)
+  // NIVEAU 3 : Fallback FIFO si une seule commande correspond
   if (!chosenOrder) {
-    chosenOrder = pendingOrders[0];
-    matchedBy = 'amount_fifo';
+    if (pendingOrders.length === 1) {
+      chosenOrder = pendingOrders[0];
+      matchedBy = 'amount_unique';
+    } else {
+      chosenOrder = pendingOrders[0];
+      matchedBy = 'amount_fifo';
+    }
   }
 
   // 5. Validation atomique de la commande
@@ -807,6 +886,7 @@ export default {
   getProductById,
   getStaffByPin,
   createOrderTransaction,
+  generateCodeReference,
   checkAndExpireOrders,
   getOrderById,
   cancelOrderClient,
