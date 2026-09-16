@@ -47,8 +47,11 @@ io.on('connection', (socket) => {
 });
 
 export function emitOrderCreated(order) {
-  io.to('staff:caisse').to('staff:admin').emit('order:created', order);
-  io.emit('order:new', order);
+  // Règle métier stricte : Les commandes en attente de paiement ne sont JAMAIS envoyées en caisse ou cuisine
+  if (order && order.statut !== 'EN_ATTENTE_DE_PAIEMENT') {
+    io.to('staff:caisse').to('staff:admin').emit('order:created', order);
+    io.emit('order:new', order);
+  }
 }
 
 export function emitPaymentMethodUpdated(order) {
@@ -307,7 +310,7 @@ export function verifyWebhookSecret(req) {
 // Analyse lexicale du SMS Orange Money ou de la notification Max it
 export function parsePaymentNotification(rawText) {
   if (!rawText || typeof rawText !== 'string') {
-    return { amount: null, senderPhone: null, transactionRef: null };
+    return { amount: null, senderPhone: null, transactionRef: null, codeReference: null };
   }
 
   const text = rawText.trim();
@@ -340,14 +343,21 @@ export function parsePaymentNotification(rawText) {
     senderPhone = phoneMatch[1].replace(/[\s.-]/g, '');
   }
 
-  // 3. Extraction de la Référence de Transaction (Trans ID, Réf, Ref, TxId)
+  // 3. Extraction de la Référence de Transaction (Trans ID, Réf Trans, ID Trans, TxId)
   let transactionRef = null;
-  const refMatch = text.match(/(?:Trans(?:\.|\s+)?ID|R[eé]f(?:\.|\s+)?|ID(?:\.|\s+)?Trans(?:action)?|TxId|Transaction\s*(?:N[°o]|ID|Ref)?)\s*:?\s*([A-Za-z0-9_.-]+)/i);
+  const refMatch = text.match(/(?:Trans(?:\.|\s+)?ID|R[eé]f(?:\.|\s+)?Trans(?:action)?|ID(?:\.|\s+)?Trans(?:action)?|TxId|Transaction\s*(?:N[°o]|ID|Ref)?)\s*:?\s*([A-Za-z0-9_.-]+)/i);
   if (refMatch && refMatch[1]) {
     transactionRef = refMatch[1].trim().replace(/[.,;:]+$/, '');
   }
 
-  return { amount, senderPhone, transactionRef };
+  // 4. Extraction du Code Référence (Mode Marchand, ex: "ref K9X2", "Ref: K9X2", "code ref K9X2")
+  let codeReference = null;
+  const codeRefMatch = text.match(/(?:code\s*r[eé]f(?:[eé]rence)?|r[eé]f(?:\.|\s+)?(?!\s*id|\s*trans)|r[eé]f[eé]rence)\s*:?\s*([A-Za-z0-9]{4,8})/i);
+  if (codeRefMatch && codeRefMatch[1]) {
+    codeReference = codeRefMatch[1].trim().toUpperCase();
+  }
+
+  return { amount, senderPhone, transactionRef, codeReference };
 }
 
 // Handler commun pour les requêtes webhook entrantes
@@ -378,12 +388,14 @@ async function handlePaymentWebhook(req, res) {
     const explicitSender = req.body?.sender || req.body?.sms_number || req.body?.phone || req.body?.numero;
     const explicitAmount = req.body?.amount || req.body?.montant;
     const explicitRef = req.body?.ref || req.body?.transaction_id || req.body?.txId || req.body?.transactionRef;
+    const explicitCodeRef = req.body?.codeReference || req.body?.code_reference || req.body?.ref_code || req.body?.reference;
 
     const parsed = parsePaymentNotification(rawMessage);
 
     const finalAmount = explicitAmount ? parseInt(explicitAmount, 10) : parsed.amount;
     const finalSender = explicitSender ? String(explicitSender).replace(/\D/g, '').slice(-8) : parsed.senderPhone;
     const finalRef = explicitRef || parsed.transactionRef;
+    const finalCodeRef = explicitCodeRef ? String(explicitCodeRef).trim().toUpperCase() : parsed.codeReference;
 
     const restaurantId = req.params.restaurantId || req.query.restaurantId || req.query.restaurant_id || req.body?.restaurantId || 'resto-premium-01';
 
@@ -391,7 +403,8 @@ async function handlePaymentWebhook(req, res) {
       restaurantId,
       amount: finalAmount,
       senderPhone: finalSender,
-      transactionRef: finalRef
+      transactionRef: finalRef,
+      codeReference: finalCodeRef
     });
 
     const reconciliation = await db.reconcilePaymentWebhook({
@@ -399,7 +412,8 @@ async function handlePaymentWebhook(req, res) {
       rawMessage,
       senderPhone: finalSender,
       amount: finalAmount,
-      transactionRef: finalRef
+      transactionRef: finalRef,
+      codeReference: finalCodeRef
     });
 
     if (reconciliation.matched && !reconciliation.duplicate) {
@@ -421,7 +435,8 @@ async function handlePaymentWebhook(req, res) {
       parsed: {
         amount: finalAmount,
         senderPhone: finalSender,
-        transactionRef: finalRef
+        transactionRef: finalRef,
+        codeReference: finalCodeRef
       },
       message: reconciliation.message
     });

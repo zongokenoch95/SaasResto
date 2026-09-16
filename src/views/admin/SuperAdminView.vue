@@ -26,6 +26,9 @@ const newResto = ref({
   phone: '',
   address: '',
   city: 'Ouagadougou',
+  typeCompteOM: 'MARCHAND',
+  codeMarchandOM: '',
+  numeroOM: '',
   orangeMerchant: '',
   moovMerchant: '',
   waveMerchant: '',
@@ -69,9 +72,16 @@ const handleCreateRestaurant = async () => {
   }
   isSubmitting.value = true;
   try {
+    const typeCompte = newResto.value.typeCompteOM || 'CLASSIQUE';
+    const codeMarchand = newResto.value.codeMarchandOM || newResto.value.orangeMerchant || '654321';
+    const numOM = newResto.value.numeroOM || newResto.value.phone || '70000000';
+
     await createRestaurant({
       ...newResto.value,
-      orange_merchant: newResto.value.orangeMerchant || '654321',
+      type_compte_om: typeCompte,
+      code_marchand_om: codeMarchand,
+      numero_om: numOM,
+      orange_merchant: codeMarchand,
       moov_merchant: newResto.value.moovMerchant || '54321',
       wave_merchant: newResto.value.waveMerchant || newResto.value.slug,
       wave_url: `https://pay.wave.com/m/${newResto.value.waveMerchant || newResto.value.slug}`
@@ -84,6 +94,9 @@ const handleCreateRestaurant = async () => {
       phone: '',
       address: '',
       city: 'Ouagadougou',
+      typeCompteOM: 'MARCHAND',
+      codeMarchandOM: '',
+      numeroOM: '',
       orangeMerchant: '',
       moovMerchant: '',
       waveMerchant: '',
@@ -200,7 +213,9 @@ onMounted(() => {
                   <small class="text-muted">{{ resto.phone || 'Non renseigné' }}</small>
                 </td>
                 <td class="col-merchants">
-                  <span class="merchant-badge orange">🟠 {{ resto.orange_merchant || '654321' }}</span>
+                  <span class="merchant-badge orange">
+                    🟠 {{ (resto.type_compte_om || 'CLASSIQUE') === 'MARCHAND' ? `Marchand (${resto.code_marchand_om || resto.orange_merchant || '654321'})` : `P2P (${resto.numero_om || resto.phone || '70000000'})` }}
+                  </span>
                   <span class="merchant-badge moov">🔵 {{ resto.moov_merchant || '54321' }}</span>
                   <span class="merchant-badge wave">🌊 {{ resto.wave_merchant || resto.slug }}</span>
                 </td>
@@ -285,18 +300,34 @@ onMounted(() => {
             <legend>💳 Comptes Marchands Mobile Money</legend>
             <div class="form-row">
               <div class="form-group">
-                <label>🟠 Code Marchand Orange Money</label>
-                <input v-model="newResto.orangeMerchant" type="text" placeholder="Ex: 778899" />
+                <label>🟠 Type Compte Orange Money</label>
+                <select v-model="newResto.typeCompteOM">
+                  <option value="MARCHAND">Compte Marchand (*144*4*6*code*montant*ref#)</option>
+                  <option value="CLASSIQUE">Classique P2P (*144*1*1*num*montant#)</option>
+                </select>
               </div>
+
+              <div v-if="newResto.typeCompteOM === 'MARCHAND'" class="form-group">
+                <label>🟠 Code Marchand Orange Money</label>
+                <input v-model="newResto.codeMarchandOM" type="text" placeholder="Ex: 654321" />
+              </div>
+
+              <div v-else class="form-group">
+                <label>🟠 Numéro Téléphone Caissier (P2P)</label>
+                <input v-model="newResto.numeroOM" type="text" placeholder="Ex: 70000000" />
+              </div>
+            </div>
+
+            <div class="form-row">
               <div class="form-group">
                 <label>🔵 Code Marchand Moov Money</label>
                 <input v-model="newResto.moovMerchant" type="text" placeholder="Ex: 99887" />
               </div>
-            </div>
 
-            <div class="form-group">
-              <label>🌊 Identifiant Marchand Wave</label>
-              <input v-model="newResto.waveMerchant" type="text" placeholder="Ex: nom-du-resto" />
+              <div class="form-group">
+                <label>🌊 Identifiant Marchand Wave</label>
+                <input v-model="newResto.waveMerchant" type="text" placeholder="Ex: nom-du-resto" />
+              </div>
             </div>
           </fieldset>
 
