@@ -1,5 +1,5 @@
 <script setup>
-// Composant racine de l'application
+import MobileFloatingCart from '@/components/MobileFloatingCart.vue'
 </script>
 
 <template>
@@ -7,6 +7,9 @@
     <main class="main-content">
       <router-view :key="$route.fullPath" />
     </main>
+
+    <!-- Barre de Panier Flottante sur Mobile (apparaît dès qu'un plat est ajouté) -->
+    <MobileFloatingCart />
   </div>
 </template>
 

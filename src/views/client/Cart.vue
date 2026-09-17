@@ -5,6 +5,7 @@ import { useCartStore } from '@/stores/cartStore'
 import { useOrderStore } from '@/stores/orderStore'
 import CartItem from '@/components/CartItem.vue'
 import PromoBanner from '@/components/PromoBanner.vue'
+import Navbar from '@/components/Navbar.vue'
 
 const cartStore = useCartStore()
 const orderStore = useOrderStore()
@@ -100,7 +101,9 @@ const handleCheckout = async () => {
 
 <template>
   <div class="cart-page">
-    <div class="container">
+    <Navbar />
+
+    <div class="container cart-container">
       <h1 class="page-title">Mon Panier</h1>
       <p class="page-subtitle">Révisez votre sélection avant de valider votre commande sur table.</p>
 
@@ -258,8 +261,12 @@ const handleCheckout = async () => {
   background-color: #0d0d0d;
   color: #fff;
   min-height: 100vh;
-  padding: 3rem 0;
+  padding: 0 0 4rem;
   font-family: 'Inter', sans-serif;
+}
+
+.cart-container {
+  padding: 2.5rem 20px;
 }
 
 .page-title {
@@ -518,16 +525,37 @@ const handleCheckout = async () => {
 }
 
 @media (max-width: 650px) {
+  .cart-container {
+    padding: 1.5rem 12px;
+  }
+  .page-title {
+    font-size: 1.85rem;
+  }
+  .page-subtitle {
+    font-size: 0.85rem;
+    margin-bottom: 1.5rem;
+  }
+  .checkout-form {
+    padding: 1.2rem;
+  }
   .operator-cards {
     grid-template-columns: 1fr;
   }
   .form-row {
     grid-template-columns: 1fr;
+    gap: 0;
   }
   .cart-summary {
     flex-direction: column;
     gap: 1.2rem;
     align-items: stretch;
+  }
+  .btn-submit {
+    width: 100%;
+    text-align: center;
+  }
+  .promo-section {
+    margin-top: 3rem;
   }
 }
 </style>

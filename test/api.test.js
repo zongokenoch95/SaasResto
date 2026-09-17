@@ -18,7 +18,9 @@ async function runTests() {
   }
 
   let clientSocket = null;
-  const BASE_URL = 'http://localhost:3000';
+  const PORT = 3001;
+  const BASE_URL = `http://localhost:${PORT}`;
+  await new Promise((resolve) => server.listen(PORT, resolve));
 
   try {
     // 1. Initialisation de la base SQLite, purge et seeding propre
@@ -139,7 +141,7 @@ async function runTests() {
     assert(updatedOrder.modePaiement === 'wave', 'Bascule dynamique d\'opérateur réussie (Moov -> Wave)');
 
     // 9. Synchronisation Temps Réel WebSockets (Socket.io)
-    clientSocket = ClientIO('http://localhost:3000', {
+    clientSocket = ClientIO(BASE_URL, {
       transports: ['websocket'],
       forceNew: true
     });
@@ -197,8 +199,8 @@ async function runTests() {
     // Vérification de la configuration hybride en base de données
     const restoPremium = await db.getRestaurantByIdOrSlug('resto-premium-01');
     assert(
-      restoPremium.type_compte_om === 'MARCHAND' && restoPremium.code_marchand_om === '654321',
-      'Architecture Multi-Tenant : Resto Premium configuré en Compte Marchand Orange Money'
+      restoPremium.type_compte_om === 'CLASSIQUE' && restoPremium.numero_om === '77121289',
+      'Architecture Multi-Tenant : Resto Premium configuré en Compte Classique Orange Money (*144*2*1*)'
     );
 
     const leBraise = await db.getRestaurantByIdOrSlug('le-braise-02');

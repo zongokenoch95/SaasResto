@@ -1,8 +1,8 @@
 import { io } from 'socket.io-client';
 import { ref } from 'vue';
 
-// URL du serveur WebSocket (adaptable selon l'environnement Vite / production)
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// URL du serveur WebSocket (adaptable selon l'environnement Vite / tunnel / production)
+const API_BASE = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
 const SOCKET_URL = API_BASE.replace(/\/api\/?$/, '');
 
 let socket = null;
