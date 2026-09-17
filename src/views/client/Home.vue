@@ -150,7 +150,52 @@ const featuredProducts = computed(() => {
 
 .featured-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 24px;
+}
+
+@media (max-width: 768px) {
+  .hero-section {
+    height: 70vh;
+    padding: 0 16px;
+  }
+
+  .hero-overlay h1 {
+    font-size: 1.85rem;
+    line-height: 1.3;
+    margin: 10px 0;
+  }
+
+  .hero-overlay p {
+    font-size: 0.88rem;
+    margin-bottom: 24px;
+    padding: 0 10px;
+  }
+
+  .btn-primary {
+    padding: 10px 24px;
+    font-size: 0.8rem;
+  }
+
+  .featured-section {
+    margin: 40px auto;
+    padding: 0 16px;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .header-titles h2 {
+    font-size: 1.65rem;
+  }
+
+  .featured-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
 }
 </style>

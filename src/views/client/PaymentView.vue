@@ -27,7 +27,7 @@ const dynamicOperatorConfig = computed(() => {
   const typeCompteOM = (restaurantInfo.value?.type_compte_om || 'CLASSIQUE').toUpperCase()
   const isOmMarchand = typeCompteOM === 'MARCHAND'
   const orangeMerchantCode = restaurantInfo.value?.code_marchand_om || restaurantInfo.value?.orange_merchant || '654321'
-  const orangePhone = restaurantInfo.value?.numero_om || restaurantInfo.value?.phone?.replace(/\D/g, '').slice(-8) || '70000000'
+  const orangePhone = restaurantInfo.value?.numero_om || restaurantInfo.value?.phone?.replace(/\D/g, '').slice(-8) || '77121289'
   const codeRef = order.value?.codeReference || order.value?.code_reference || ''
 
   const moovCode = restaurantInfo.value?.moov_merchant || '54321'
@@ -36,14 +36,14 @@ const dynamicOperatorConfig = computed(() => {
 
   // Syntaxe USSD Orange Money :
   // - Marchand : *144*4*6*codeMarchand*montant*codeReference#
-  // - Classique (P2P Caissier) : *144*1*1*numeroOM*montant#
+  // - Classique (P2P Caissier) : *144*2*1*numeroOM*montant#
   const getOmUssd = (amount) => isOmMarchand
     ? `*144*4*6*${orangeMerchantCode}*${amount}*${codeRef}#`
-    : `*144*1*1*${orangePhone}*${amount}#`
+    : `*144*2*1*${orangePhone}*${amount}#`
 
   const getOmTelUrl = (amount) => isOmMarchand
     ? `tel:*144*4*6*${orangeMerchantCode}*${amount}*${codeRef}%23`
-    : `tel:*144*1*1*${orangePhone}*${amount}%23`
+    : `tel:*144*2*1*${orangePhone}*${amount}%23`
 
   return {
     orange_money: {
@@ -397,10 +397,12 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-else class="om-detail-grid">
+           <!--
             <div class="om-info-card">
               <span class="om-card-lbl">👤 NUMÉRO DU CAISSIER (P2P)</span>
               <span class="om-card-val">{{ currentOperator.merchantCode }}</span>
             </div>
+             -->
           </div>
         </div>
 
@@ -421,11 +423,11 @@ onUnmounted(() => {
             <a :href="currentActionUrl" class="btn-action-call" :class="currentOperator.id">
               <span class="phone-icon">{{ currentOperator.type === 'ussd' ? '📞' : '🌊' }}</span>
               <span>
-                {{ currentOperator.type === 'ussd' ? `Composer ${currentUssdCode}` : `Transférer ${orderAmount.toLocaleString()} FCFA sur Wave` }}
+                {{ currentOperator.type === 'ussd' ? `Lancer le paiement ${currentUssdCode}` : `Transférer ${orderAmount.toLocaleString()} FCFA sur Wave` }}
               </span>
             </a>
 
-            <div class="manual-box">
+           <!-- <div class="manual-box">
               <span>{{ currentOperator.type === 'ussd' ? 'Ou composez manuellement :' : 'Informations de virement :' }}</span>
               <div class="code-box">
                 <code>{{ currentUssdCode }}</code>
@@ -434,17 +436,20 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
+            -->
           </div>
 
           <!-- Option Desktop : Scan QR Code -->
           <div class="method-card desktop-method">
             <span class="badge-step">Option 2 · Depuis un Ordinateur</span>
             <h4>Scannez avec votre téléphone</h4>
+            <!-- 
             <p>
               {{ currentOperator.type === 'ussd' 
                 ? 'Pointez l\'appareil photo de votre smartphone pour déclencher immédiatement l\'appel USSD :' 
                 : 'Scannez avec l\'appareil photo ou l\'application Wave pour régler instantanément :' }}
             </p>
+            -->
 
             <div class="qr-container" v-if="qrCodeDataUrl">
               <img :src="qrCodeDataUrl" :alt="`QR Code Paiement ${currentOperator.shortName}`" class="qr-image" />
@@ -455,7 +460,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Attente active & Synchronisation WebSocket / Polling -->
-        <div class="polling-indicator" :class="{ 'socket-live': socketConnected }">
+        <!--<div class="polling-indicator" :class="{ 'socket-live': socketConnected }">
           <div class="pulsing-dot" :class="{ 'dot-live': socketConnected }"></div>
           <div class="polling-text">
             <strong>
@@ -472,6 +477,7 @@ onUnmounted(() => {
             </span>
           </div>
         </div>
+        -->
 
         <!-- Actions secondaires : Annulation -->
         <div class="payment-actions">

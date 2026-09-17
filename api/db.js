@@ -217,7 +217,7 @@ export async function initDb() {
 
   // Configuration par défaut Orange Money pour les restaurants de démonstration
   try {
-    await run(`UPDATE restaurants SET type_compte_om = 'MARCHAND', code_marchand_om = '654321', numero_om = '70000001' WHERE id = 'resto-premium-01'`);
+    await run(`UPDATE restaurants SET type_compte_om = 'CLASSIQUE', code_marchand_om = '', numero_om = '77121289' WHERE id = 'resto-premium-01'`);
     await run(`UPDATE restaurants SET type_compte_om = 'CLASSIQUE', numero_om = '76000002', code_marchand_om = '' WHERE id = 'le-braise-02'`);
   } catch (err) {}
 

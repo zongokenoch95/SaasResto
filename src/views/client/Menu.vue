@@ -150,7 +150,7 @@ const handleCategorySelect = (category) => {
 
 .products-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 24px;
   margin-top: 40px;
 }
@@ -164,5 +164,29 @@ const handleCategorySelect = (category) => {
 
 .error {
   color: #ff6b6b;
+}
+
+@media (max-width: 768px) {
+  .menu-content {
+    padding: 24px 16px 80px;
+  }
+
+  .menu-header {
+    margin-bottom: 20px;
+  }
+
+  .menu-header h1 {
+    font-size: 1.9rem;
+  }
+
+  .menu-header p {
+    font-size: 0.88rem;
+  }
+
+  .products-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin-top: 24px;
+  }
 }
 </style>

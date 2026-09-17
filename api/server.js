@@ -17,9 +17,32 @@ const io = new Server(server, {
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text({ type: ['text/*', 'application/text'] }));
+
+// Middleware de tolérance absolue aux erreurs de syntaxe JSON mobiles (MacroDroid / SMS)
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && (err.status === 400 || 'body' in err)) {
+    console.warn('⚠️ [Webhook] JSON mal formé reçu du mobile. Récupération et réparation automatique...');
+    const raw = req.rawBody || err.body || '';
+    try {
+      // Tenter de réparer les retours à la ligne non échappés et guillemets simples
+      const fixed = String(raw).replace(/[\r\n]+/g, ' ').replace(/'/g, '"');
+      req.body = JSON.parse(fixed);
+      return next();
+    } catch (e) {
+      // Fallback : traiter l'intégralité du texte brut reçu
+      req.body = { message: String(raw) };
+      return next();
+    }
+  }
+  next(err);
+});
 
 // ==========================================
 // GESTION TEMPS RÉEL (SOCKET.IO)
@@ -576,8 +599,11 @@ app.post('/api/cuisine/commandes/:id/terminer', requireAuth(['cuisine', 'caisse'
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`✅ Serveur backend RestoPremium démarré sur http://localhost:${PORT}`);
-});
+const isDirectRun = process.argv[1] && (process.argv[1].endsWith('server.js') || process.argv[1].endsWith('server'));
+if (isDirectRun) {
+  server.listen(PORT, () => {
+    console.log(`✅ Serveur backend RestoPremium démarré sur http://localhost:${PORT}`);
+  });
+}
 
 export { app, server, io };

@@ -303,7 +303,7 @@ onMounted(() => {
                 <label>🟠 Type Compte Orange Money</label>
                 <select v-model="newResto.typeCompteOM">
                   <option value="MARCHAND">Compte Marchand (*144*4*6*code*montant*ref#)</option>
-                  <option value="CLASSIQUE">Classique P2P (*144*1*1*num*montant#)</option>
+                  <option value="CLASSIQUE">Classique P2P (*144*2*1*num*montant#)</option>
                 </select>
               </div>
 

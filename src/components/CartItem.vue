@@ -145,4 +145,49 @@ const removeItem = () => {
   cursor: pointer;
   font-size: 1.1rem;
 }
+
+@media (max-width: 480px) {
+  .cart-item {
+    gap: 0.8rem;
+    padding: 0.75rem;
+  }
+
+  .item-image {
+    width: 55px;
+    height: 55px;
+  }
+
+  .item-title {
+    font-size: 0.95rem;
+    margin-bottom: 0.2rem;
+  }
+
+  .item-description {
+    font-size: 0.78rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .item-price {
+    font-size: 0.9rem;
+  }
+
+  .item-actions {
+    gap: 0.5rem;
+  }
+
+  .btn-qty {
+    width: 24px;
+    height: 24px;
+    font-size: 0.9rem;
+  }
+
+  .qty-value {
+    padding: 0 0.35rem;
+    font-size: 0.85rem;
+  }
+
+  .btn-remove {
+    font-size: 1rem;
+  }
+}
 </style>

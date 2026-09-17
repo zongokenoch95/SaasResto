@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCartStore } from '@/stores/cartStore'
 import PromoBanner from '@/components/PromoBanner.vue'
+import Navbar from '@/components/Navbar.vue'
+import Footer from '@/components/Footer.vue'
 
 const route = useRoute()
 const cartStore = useCartStore()
@@ -223,19 +225,8 @@ const addToCart = () => {
 
 <template>
   <div class="page-container">
-    <!-- Navbar -->
-    <header class="navbar">
-      <div class="nav-brand">Le Premium</div>
-      <nav class="nav-links">
-        <router-link to="/">Home</router-link>
-        <router-link to="/menu">Menu</router-link>
-      </nav>
-      <div class="nav-cart">
-        <router-link to="/cart" style="color: inherit; text-decoration: none;">
-          🛒 <span class="cart-badge" v-if="cartStore.totalCount > 0">{{ cartStore.totalCount }}</span>
-        </router-link>
-      </div>
-    </header>
+    <!-- Navbar globale et responsive -->
+    <Navbar />
 
     <!-- Product Details Section -->
     <main class="product-detail-section">
@@ -288,14 +279,7 @@ const addToCart = () => {
     </div>
 
     <!-- Footer -->
-    <footer class="footer">
-      <div class="footer-brand">Le Premium</div>
-      <div class="footer-info">
-        <p>Mardi à Dimanche : 18h00 - 01h00</p>
-        <p>+226 00 00 00 00</p>
-      </div>
-      <p class="footer-copy">© 2026 Le Premium. Elevated Afro-Gourmet Excellence.</p>
-    </footer>
+    <Footer />
   </div>
 </template>
 
@@ -313,56 +297,6 @@ const addToCart = () => {
   flex-direction: column;
   margin: 0;
   padding: 0;
-}
-
-/* Navbar */
-.navbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 40px;
-  border-bottom: 1px solid #1a1a1a;
-  width: 100%;
-}
-
-.nav-brand {
-  font-size: 1.5rem;
-  color: #d4af37;
-  font-style: italic;
-}
-
-.nav-links {
-  display: flex;
-  gap: 30px;
-}
-
-.nav-links a {
-  color: #a0a0a0;
-  text-decoration: none;
-  font-size: 0.9rem;
-  letter-spacing: 1px;
-}
-
-.nav-links a:hover {
-  color: #d4af37;
-}
-
-.nav-cart {
-  position: relative;
-  cursor: pointer;
-  font-size: 1.2rem;
-}
-
-.cart-badge {
-  position: absolute;
-  top: -8px;
-  right: -10px;
-  background-color: #d4af37;
-  color: #000;
-  font-size: 0.7rem;
-  padding: 2px 6px;
-  border-radius: 50%;
-  font-weight: bold;
 }
 
 /* Product Detail Section */
@@ -531,41 +465,15 @@ const addToCart = () => {
   margin: 0 !important;
 }
 
-/* Footer */
-.footer {
-  border-top: 1px solid #1a1a1a;
-  padding: 40px 20px;
-  text-align: center;
-  width: 100%;
-  margin-top: auto;
-}
-
-.footer-brand {
-  font-size: 1.3rem;
-  color: #d4af37;
-  font-style: italic;
-  margin-bottom: 10px;
-}
-
-.footer-info p {
-  color: #888;
-  font-size: 0.9rem;
-  font-family: sans-serif;
-  margin-bottom: 4px;
-}
-
-.footer-copy {
-  color: #555;
-  font-size: 0.75rem;
-  font-family: sans-serif;
-  margin-top: 20px;
-}
-
 /* Responsiveness for smaller screens */
 @media (max-width: 768px) {
+  .product-detail-section {
+    margin: 20px auto;
+    padding: 0 16px;
+  }
   .product-grid {
     grid-template-columns: 1fr;
-    gap: 30px;
+    gap: 24px;
   }
 }
 </style>
