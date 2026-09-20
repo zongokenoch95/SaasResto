@@ -20,6 +20,42 @@ const isCancelling = ref(false)
 const qrCodeDataUrl = ref('')
 const copied = ref(false)
 
+// Détection des navigateurs intégrés aux réseaux sociaux (In-App WebViews : TikTok, Instagram, Facebook, etc.)
+const userAgent = typeof window !== 'undefined' ? (window.navigator.userAgent || window.navigator.vendor || window.opera || '') : ''
+
+const inAppName = computed(() => {
+  const ua = userAgent
+  if (/FBAN|FBAV|FB_IAB/i.test(ua)) return 'Facebook'
+  if (/Instagram/i.test(ua)) return 'Instagram'
+  if (/TikTok|musical_ly|Bytedance/i.test(ua)) return 'TikTok'
+  if (/Snapchat/i.test(ua)) return 'Snapchat'
+  if (/Twitter/i.test(ua)) return 'X (Twitter)'
+  if (/Line/i.test(ua)) return 'Line'
+  if (/LinkedInApp/i.test(ua)) return 'LinkedIn'
+  return 'Réseau Social'
+})
+
+// Vrai si ouvert dans Facebook, Instagram, TikTok, etc.
+const isInAppBrowser = computed(() => {
+  return /FBAN|FBAV|FB_IAB|Instagram|TikTok|musical_ly|Bytedance|Snapchat|Twitter|Line|LinkedInApp/i.test(userAgent)
+})
+
+// Détection OS pour solutions spécifiques
+const isAndroid = computed(() => {
+  return /Android/i.test(userAgent)
+})
+
+const isIOS = computed(() => {
+  return /iPhone|iPad|iPod/i.test(userAgent)
+})
+
+// Deep-link Chrome Intent (Solution C) pour ouvrir Google Chrome sous Android
+const chromeIntentUrl = computed(() => {
+  if (typeof window === 'undefined') return '#'
+  const urlWithoutProtocol = window.location.href.replace(/^https?:\/\//, '')
+  return `intent://${urlWithoutProtocol}#Intent;scheme=https;package=com.android.chrome;end`
+})
+
 // Configuration Multi-Opérateurs Mobile Money dynamique (Multi-Tenant)
 // Configuration Multi-Opérateurs Mobile Money dynamique (Multi-Tenant)
 const dynamicOperatorConfig = computed(() => {
@@ -202,14 +238,41 @@ const updateCountdown = () => {
   }
 }
 
-// Copier le code ou le lien dans le presse-papier
-const copyCode = async () => {
-  try {
-    await navigator.clipboard.writeText(currentUssdCode.value)
+// Copier le code dans le presse-papier avec fallback WebView garanti
+const copyCode = async (textToCopy) => {
+  const text = textToCopy || currentUssdCode.value
+  let success = false
+
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      success = true
+    } catch (err) {
+      console.warn("navigator.clipboard a échoué, essai fallback execCommand...", err)
+    }
+  }
+
+  if (!success) {
+    try {
+      const textArea = document.createElement('textarea')
+      textArea.value = text
+      textArea.style.position = 'fixed'
+      textArea.style.top = '-9999px'
+      textArea.style.left = '-9999px'
+      textArea.setAttribute('readonly', '')
+      document.body.appendChild(textArea)
+      textArea.select()
+      textArea.setSelectionRange(0, 99999) // Compatibilité iOS
+      success = document.execCommand('copy')
+      document.body.removeChild(textArea)
+    } catch (err) {
+      console.error("Échec du fallback execCommand:", err)
+    }
+  }
+
+  if (success) {
     copied.value = true
-    setTimeout(() => { copied.value = false }, 2000)
-  } catch (err) {
-    console.error("Impossible de copier:", err)
+    setTimeout(() => { copied.value = false }, 2500)
   }
 }
 
@@ -408,35 +471,100 @@ onUnmounted(() => {
 
         <!-- Instructions selon l'opérateur -->
         <div class="payment-methods-grid">
-          <!-- Option Mobile : Bouton direct USSD ou Lien Wave -->
+          <!-- Option Mobile : Solution A & C pour In-App, ou Bouton Direct pour Navigateur Normal -->
           <div class="method-card mobile-method">
             <span class="badge-step">Option 1 · Sur Smartphone</span>
-            <h4>
-              {{ currentOperator.type === 'ussd' ? 'Lancement direct du composeur USSD' : 'Lancement de l\'application Wave' }}
-            </h4>
-            <p>
-              {{ currentOperator.type === 'ussd' 
-                ? 'Cliquez pour ouvrir automatiquement le code marchand dans votre application Téléphone :' 
-                : 'Cliquez ci-dessous pour initier le transfert directement dans l\'application Wave :' }}
-            </p>
             
-            <a :href="currentActionUrl" class="btn-action-call" :class="currentOperator.id">
-              <span class="phone-icon">{{ currentOperator.type === 'ussd' ? '📞' : '🌊' }}</span>
-              <span>
-                {{ currentOperator.type === 'ussd' ? `Lancer le paiement ${currentUssdCode}` : `Transférer ${orderAmount.toLocaleString()} FCFA sur Wave` }}
-              </span>
-            </a>
-
-           <!-- <div class="manual-box">
-              <span>{{ currentOperator.type === 'ussd' ? 'Ou composez manuellement :' : 'Informations de virement :' }}</span>
-              <div class="code-box">
-                <code>{{ currentUssdCode }}</code>
-                <button @click="copyCode" class="btn-copy">
-                  {{ copied ? 'Copié ✓' : 'Copier' }}
-                </button>
+            <!-- CAS 1 : Ouvert dans un navigateur In-App (TikTok, Instagram, Facebook...) et paiement USSD -->
+            <template v-if="isInAppBrowser && currentOperator.type === 'ussd'">
+              <div class="inapp-warning-banner">
+                <div class="inapp-badge">
+                  <span class="inapp-icon">📱</span>
+                  <span>Navigateur <strong>{{ inAppName }}</strong> détecté</span>
+                </div>
+                <p class="inapp-desc">
+                  L'application {{ inAppName }} bloque l'appel direct des codes USSD. Copiez simplement le code ci-dessous pour régler :
+                </p>
               </div>
-            </div>
-            -->
+
+              <!-- SOLUTION A : Copie ergonomique + Étapes guidées -->
+              <div class="inapp-copy-card">
+                <div class="inapp-code-display">
+                  <span class="inapp-code-label">Code USSD à composer :</span>
+                  <code class="inapp-code-val">{{ currentUssdCode }}</code>
+                </div>
+
+                <button @click="copyCode()" class="btn-copy-main" :class="{ copied: copied }">
+                  <span class="btn-copy-icon">{{ copied ? '✅' : '📋' }}</span>
+                  <span class="btn-copy-text">
+                    {{ copied ? 'Code copié dans le presse-papier !' : 'Copier le code USSD' }}
+                  </span>
+                </button>
+
+                <div class="inapp-steps-guide">
+                  <div class="guide-step">
+                    <span class="step-num">1</span>
+                    <span class="step-txt">Touchez <strong>Copier le code USSD</strong> ci-dessus</span>
+                  </div>
+                  <div class="guide-step">
+                    <span class="step-num">2</span>
+                    <span class="step-txt">Ouvrez l'application <strong>Téléphone</strong> de votre smartphone</span>
+                  </div>
+                  <div class="guide-step">
+                    <span class="step-num">3</span>
+                    <span class="step-txt"><strong>Collez</strong> le code, lancez l'appel et tapez votre code secret</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- SOLUTION C : Sortie vers Google Chrome sous Android -->
+              <div v-if="isAndroid" class="inapp-escape-card">
+                <div class="escape-divider">
+                  <span>OU PAIEMENT DIRECT EN 1-CLIC</span>
+                </div>
+                <a :href="chromeIntentUrl" class="btn-open-chrome">
+                  <span class="chrome-icon">🌐</span>
+                  <span>Ouvrir dans Google Chrome</span>
+                </a>
+                <p class="escape-hint">
+                  Dans Google Chrome, le code USSD s'ouvre en 1 clic sans devoir copier manuellement.
+                </p>
+              </div>
+              <div v-else-if="isIOS" class="inapp-escape-card ios-tip">
+                <p class="ios-hint">
+                  💡 <strong>Astuce iPhone :</strong> Touchez les trois points <strong>•••</strong> en haut ou en bas, puis choisissez <em>"Ouvrir dans Safari"</em> pour payer en 1 clic.
+                </p>
+              </div>
+            </template>
+
+            <!-- CAS 2 : Navigateur Standard (Chrome, Safari, etc.) ou Opérateur Direct (Wave) -->
+            <template v-else>
+              <h4>
+                {{ currentOperator.type === 'ussd' ? 'Lancement direct du composeur USSD' : 'Lancement de l\'application Wave' }}
+              </h4>
+              <p>
+                {{ currentOperator.type === 'ussd' 
+                  ? 'Cliquez pour ouvrir automatiquement le code marchand dans votre application Téléphone :' 
+                  : 'Cliquez ci-dessous pour initier le transfert directement dans l\'application Wave :' }}
+              </p>
+              
+              <a :href="currentActionUrl" class="btn-action-call" :class="currentOperator.id">
+                <span class="phone-icon">{{ currentOperator.type === 'ussd' ? '📞' : '🌊' }}</span>
+                <span>
+                  {{ currentOperator.type === 'ussd' ? `Lancer le paiement ${currentUssdCode}` : `Transférer ${orderAmount.toLocaleString()} FCFA sur Wave` }}
+                </span>
+              </a>
+
+              <div v-if="currentOperator.type === 'ussd'" class="manual-box">
+                <span>Ou composez manuellement :</span>
+                <div class="code-box">
+                  <code>{{ currentUssdCode }}</code>
+                  <button @click="copyCode()" class="btn-copy">
+                    {{ copied ? 'Copié ✓' : 'Copier' }}
+                  </button>
+                </div>
+              </div>
+            </template>
           </div>
 
           <!-- Option Desktop : Scan QR Code -->
@@ -927,6 +1055,213 @@ onUnmounted(() => {
 
 .btn-copy:hover {
   background: #3a3a3a;
+}
+
+/* Styles Spécifiques Navigateurs In-App (TikTok, Instagram, Facebook) */
+.inapp-warning-banner {
+  background: rgba(255, 121, 0, 0.08);
+  border: 1px solid rgba(255, 121, 0, 0.25);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1.2rem;
+}
+
+.inapp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(255, 121, 0, 0.2);
+  color: #ff9433;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.inapp-desc {
+  font-size: 0.82rem;
+  color: #bbb;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.inapp-copy-card {
+  background: #111;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.inapp-code-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: #080808;
+  border: 1px dashed rgba(212, 175, 55, 0.35);
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
+  text-align: center;
+}
+
+.inapp-code-label {
+  font-size: 0.72rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.inapp-code-val {
+  font-family: monospace;
+  font-size: 1.2rem;
+  color: #d4af37;
+  font-weight: 700;
+  letter-spacing: 1px;
+  word-break: break-all;
+}
+
+.btn-copy-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: linear-gradient(135deg, #ff7900 0%, #ff5500 100%);
+  color: #fff;
+  border: none;
+  padding: 0.95rem 1.2rem;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(255, 121, 0, 0.3);
+  transition: all 0.25s ease;
+}
+
+.btn-copy-main:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(255, 121, 0, 0.4);
+}
+
+.btn-copy-main.copied {
+  background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+  box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3);
+}
+
+.inapp-steps-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  padding: 0.8rem;
+}
+
+.guide-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  font-size: 0.8rem;
+  color: #aaa;
+  line-height: 1.35;
+}
+
+.guide-step strong {
+  color: #fff;
+}
+
+.step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(212, 175, 55, 0.2);
+  color: #d4af37;
+  font-size: 0.72rem;
+  font-weight: bold;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* Solution C : Deep-link Chrome */
+.inapp-escape-card {
+  margin-top: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  text-align: center;
+}
+
+.escape-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: #555;
+  font-size: 0.68rem;
+  letter-spacing: 1px;
+  margin: 0.4rem 0;
+}
+
+.escape-divider::before,
+.escape-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.escape-divider span {
+  padding: 0 0.8rem;
+}
+
+.btn-open-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: #23272e;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  text-decoration: none;
+  padding: 0.8rem 1.2rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-open-chrome:hover {
+  background: #2d323b;
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.chrome-icon {
+  font-size: 1.1rem;
+}
+
+.escape-hint {
+  font-size: 0.74rem;
+  color: #777;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.ios-tip {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+}
+
+.ios-hint {
+  font-size: 0.78rem;
+  color: #aaa;
+  margin: 0;
+  line-height: 1.35;
 }
 
 .desktop-method {
