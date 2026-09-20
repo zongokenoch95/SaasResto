@@ -56,6 +56,26 @@ const chromeIntentUrl = computed(() => {
   return `intent://${urlWithoutProtocol}#Intent;scheme=https;package=com.android.chrome;end`
 })
 
+const hasAutoTriggeredDialer = ref(false)
+
+// Forcer l'ouverture de l'application Téléphone (navigateurs smartphones standards)
+const forceOpenDialer = () => {
+  if (!currentActionUrl.value || currentActionUrl.value === '#' || currentActionUrl.value.startsWith('http')) return
+  try {
+    window.location.href = currentActionUrl.value
+  } catch (err) {
+    console.error("Erreur ouverture application téléphone:", err)
+  }
+}
+
+// Déclenchement automatique pour navigateurs smartphones classiques
+const triggerAutoDialerIfBrowser = () => {
+  if (!isInAppBrowser.value && currentOperator.value?.type === 'ussd' && !hasAutoTriggeredDialer.value) {
+    hasAutoTriggeredDialer.value = true
+    forceOpenDialer()
+  }
+}
+
 // Configuration Multi-Opérateurs Mobile Money dynamique (Multi-Tenant)
 // Configuration Multi-Opérateurs Mobile Money dynamique (Multi-Tenant)
 const dynamicOperatorConfig = computed(() => {
@@ -184,6 +204,12 @@ const switchOperator = async (newOp) => {
       order.value.mode_paiement = newOp
     }
     await generateQrCode()
+    // Si l'utilisateur est dans un navigateur standard, forcer l'ouverture du composeur pour le nouvel opérateur
+    if (!isInAppBrowser.value && currentOperator.value?.type === 'ussd') {
+      setTimeout(() => {
+        forceOpenDialer()
+      }, 300)
+    }
   } catch (err) {
     console.error('Erreur changement opérateur:', err)
   }
@@ -360,6 +386,13 @@ onMounted(async () => {
       timerInterval = setInterval(updateCountdown, 1000)
       // Polling de secours dégradé (sécurité réseau mobile)
       pollingInterval = setInterval(checkStatus, 5000)
+
+      // Si le client est dans un navigateur standard (pas une WebView), forcer l'ouverture de l'application téléphone
+      if (!isInAppBrowser.value && currentOperator.value?.type === 'ussd') {
+        setTimeout(() => {
+          triggerAutoDialerIfBrowser()
+        }, 500)
+      }
     }
   } catch (err) {
     console.error("Erreur chargement commande:", err)
@@ -537,31 +570,46 @@ onUnmounted(() => {
               </div>
             </template>
 
-            <!-- CAS 2 : Navigateur Standard (Chrome, Safari, etc.) ou Opérateur Direct (Wave) -->
+            <!-- CAS 2 : Navigateur Standard (Chrome, Safari, etc.) sur Smartphone -> Forcer l'ouverture de l'application Téléphone -->
             <template v-else>
-              <h4>
-                {{ currentOperator.type === 'ussd' ? 'Lancement direct du composeur USSD' : 'Lancement de l\'application Wave' }}
-              </h4>
-              <p>
-                {{ currentOperator.type === 'ussd' 
-                  ? 'Cliquez pour ouvrir automatiquement le code marchand dans votre application Téléphone :' 
-                  : 'Cliquez ci-dessous pour initier le transfert directement dans l\'application Wave :' }}
-              </p>
-              
-              <a :href="currentActionUrl" class="btn-action-call" :class="currentOperator.id">
-                <span class="phone-icon">{{ currentOperator.type === 'ussd' ? '📞' : '🌊' }}</span>
-                <span>
-                  {{ currentOperator.type === 'ussd' ? `Lancer le paiement ${currentUssdCode}` : `Transférer ${orderAmount.toLocaleString()} FCFA sur Wave` }}
-                </span>
-              </a>
+              <div class="browser-direct-card">
+                <div class="browser-status-banner">
+                  <span class="pulse-phone-icon">📞</span>
+                  <div>
+                    <h4>Ouverture de votre application Téléphone</h4>
+                    <p>Le code USSD est prêt sur votre composeur d'appels :</p>
+                  </div>
+                </div>
 
-              <div v-if="currentOperator.type === 'ussd'" class="manual-box">
-                <span>Ou composez manuellement :</span>
-                <div class="code-box">
-                  <code>{{ currentUssdCode }}</code>
-                  <button @click="copyCode()" class="btn-copy">
-                    {{ copied ? 'Copié ✓' : 'Copier' }}
-                  </button>
+                <div v-if="currentOperator.type === 'ussd'" class="direct-code-preview">
+                  <span class="code-preview-lbl">Code USSD préparé :</span>
+                  <code class="code-highlight">{{ currentUssdCode }}</code>
+                </div>
+
+                <a 
+                  :href="currentActionUrl" 
+                  @click="forceOpenDialer" 
+                  class="btn-action-call" 
+                  :class="currentOperator.id"
+                >
+                  <span class="phone-icon">{{ currentOperator.type === 'ussd' ? '📞' : '🌊' }}</span>
+                  <span>
+                    {{ currentOperator.type === 'ussd' ? `Ouvrir l'application Téléphone (${currentUssdCode})` : `Transférer ${orderAmount.toLocaleString()} FCFA sur Wave` }}
+                  </span>
+                </a>
+
+                <p v-if="currentOperator.type === 'ussd'" class="browser-auto-hint">
+                  ⚡ <em>L'application Téléphone se déclenche automatiquement. Si elle ne s'est pas ouverte, appuyez sur le bouton ci-dessus pour forcer l'ouverture.</em>
+                </p>
+
+                <div v-if="currentOperator.type === 'ussd'" class="manual-box">
+                  <span>Ou composez manuellement le code :</span>
+                  <div class="code-box">
+                    <code>{{ currentUssdCode }}</code>
+                    <button @click="copyCode()" class="btn-copy">
+                      {{ copied ? 'Copié ✓' : 'Copier' }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </template>
@@ -1262,6 +1310,81 @@ onUnmounted(() => {
   color: #aaa;
   margin: 0;
   line-height: 1.35;
+}
+
+/* Styles Navigateur Smartphone Standard */
+.browser-direct-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.browser-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: rgba(46, 204, 113, 0.08);
+  border: 1px solid rgba(46, 204, 113, 0.25);
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+}
+
+.pulse-phone-icon {
+  font-size: 1.5rem;
+  animation: bounce 1.8s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.browser-status-banner h4 {
+  font-size: 0.95rem;
+  color: #2ecc71;
+  margin-bottom: 0.2rem;
+}
+
+.browser-status-banner p {
+  font-size: 0.8rem;
+  color: #bbb;
+  margin: 0;
+}
+
+.direct-code-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  background: #0a0a0a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 0.7rem 1rem;
+  text-align: center;
+}
+
+.code-preview-lbl {
+  font-size: 0.7rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.code-highlight {
+  font-family: monospace;
+  font-size: 1.2rem;
+  color: #d4af37;
+  font-weight: 700;
+  letter-spacing: 1px;
+  word-break: break-all;
+}
+
+.browser-auto-hint {
+  font-size: 0.76rem;
+  color: #888;
+  text-align: center;
+  line-height: 1.35;
+  margin: 0;
 }
 
 .desktop-method {
