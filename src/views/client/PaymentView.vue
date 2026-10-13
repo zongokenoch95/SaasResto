@@ -682,8 +682,8 @@ onUnmounted(() => {
 
 <style scoped>
 .payment-page {
-  background-color: #0d0d0d;
-  color: #fff;
+  background-color: #f7f4ee; /* Fond blanc crémé */
+  color: #1a1a1a;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -701,6 +701,7 @@ onUnmounted(() => {
 .loading-state {
   text-align: center;
   padding: 5rem 1rem;
+  color: #2b2b2b;
 }
 
 .spinner {
@@ -719,12 +720,14 @@ onUnmounted(() => {
 
 .status-card {
   background-color: #141414;
-  border-radius: 12px;
+  color: #fff;
+  border-radius: 14px;
   padding: 3rem 2rem;
   text-align: center;
   max-width: 600px;
   margin: 3rem auto;
-  border: 1px solid #282828;
+  border: 2px solid #d4af37;
+  box-shadow: 0 12px 40px rgba(212, 175, 55, 0.18), 0 8px 30px rgba(0, 0, 0, 0.35);
 }
 
 .status-icon {
@@ -773,26 +776,30 @@ onUnmounted(() => {
   background-color: #c5a059;
 }
 
-/* Carte de Paiement Principale */
+/* Carte de Paiement Principale (Enveloppe Sombre avec Bordure Dorée) */
 .payment-card {
-  background-color: #141414;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: #141414; /* Couleur précédente préservée */
+  color: #fff;
+  border-radius: 14px;
+  border: 2px solid #d4af37; /* Bordure dorée raffinée */
   padding: 2.2rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  transition: border-color 0.3s ease;
+  box-shadow: 0 15px 45px rgba(212, 175, 55, 0.18), 0 10px 30px rgba(0, 0, 0, 0.35);
+  transition: all 0.3s ease;
 }
 
 .payment-card.theme-orange {
-  border-color: rgba(255, 121, 0, 0.35);
+  border-color: #d4af37;
+  box-shadow: 0 15px 45px rgba(212, 175, 55, 0.22), 0 0 20px rgba(255, 121, 0, 0.15);
 }
 
 .payment-card.theme-moov {
-  border-color: rgba(0, 102, 179, 0.35);
+  border-color: #d4af37;
+  box-shadow: 0 15px 45px rgba(212, 175, 55, 0.22), 0 0 20px rgba(0, 102, 179, 0.15);
 }
 
 .payment-card.theme-wave {
-  border-color: rgba(29, 195, 244, 0.35);
+  border-color: #d4af37;
+  box-shadow: 0 15px 45px rgba(212, 175, 55, 0.22), 0 0 20px rgba(29, 195, 244, 0.15);
 }
 
 /* Sélecteur d'opérateur rapide */
