@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import http from 'http';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 import db from './db.js';
 
@@ -598,6 +601,24 @@ app.post('/api/cuisine/commandes/:id/terminer', requireAuth(['cuisine', 'caisse'
     res.status(400).json({ error: err.message });
   }
 });
+
+// ==========================================
+// 6. DISTRIBUTION DU FRONTEND (SPA VUE.JS)
+// ==========================================
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '../dist');
+
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  // Pour toute requête GET cliente non-API, renvoyer l'application SPA Vue.js
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/socket.io')) {
+      return res.sendFile(path.join(distPath, 'index.html'));
+    }
+    next();
+  });
+}
 
 const isDirectRun = process.argv[1] && (process.argv[1].endsWith('server.js') || process.argv[1].endsWith('server'));
 if (isDirectRun) {
